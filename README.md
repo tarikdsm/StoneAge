@@ -129,7 +129,7 @@ Current schema fields:
 
 - `name`: display name for the stage
 - `tileSize`: rendered tile size in pixels
-- `width`, `height`: logical board dimensions in tiles
+- `width`, `height`: total logical board dimensions in tiles; authored border walls, if present, reduce the open playable interior
 - `par`: advisory design metadata for future scoring/difficulty use
 - `objective`: HUD text shown to the player
 - `playerSpawn`: starting player tile
