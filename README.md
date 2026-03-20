@@ -1,0 +1,128 @@
+# Stone Age: Ice Shift
+
+A production-minded web game prototype inspired by **Atari Stone Age / Pengo**, built with **Phaser 3 + TypeScript + Vite**.
+
+This project recreates the core push/crush gameplay loop in a modern browser-friendly structure rather than attempting a direct code port. The current foundation includes one complete playable stage, responsive desktop and touch controls, JSON-authored level data, automated non-visual tests, placeholder art/audio, and a maintainable documentation standard for future development.
+
+## Features
+
+- Top-down grid-based movement.
+- Pushable stone blocks with crush behavior.
+- Enemies that pursue the player.
+- Win/lose states with clear restart flow.
+- One complete stage authored as JSON.
+- Desktop controls: keyboard + mouse.
+- Tablet/phone controls: swipe + adjacent tap-to-push.
+- Static-hosting-friendly Vite build output.
+- Vitest coverage for core gameplay logic.
+- Focused documentation for architecture, mechanics, and repository conventions.
+
+## Controls
+
+### Desktop
+
+- **Arrow keys / WASD**: move
+- **Space**: push in the current facing direction
+- **Left mouse click**: movement intent
+- **Right mouse click**: push/action intent
+
+### Mobile / Tablet
+
+- **Swipe**: movement intent
+- **Tap an adjacent block**: push/action intent
+
+## Documentation map
+
+- [`docs/DOCUMENTATION_POLICY.md`](docs/DOCUMENTATION_POLICY.md): repository documentation rules and maintenance expectations.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): subsystem boundaries, state ownership, and extension guidance.
+- [`docs/GAMEPLAY_MECHANICS.md`](docs/GAMEPLAY_MECHANICS.md): gameplay rules, turn order, input interpretation, and win/lose logic.
+
+## Architecture summary
+
+### Scenes
+
+- **BootScene**: loads placeholder assets and enters the menu.
+- **MenuScene**: presents the premise and controls.
+- **GameScene**: renders the stage, applies turn results, and coordinates feedback.
+- **UIScene**: displays the HUD, status messages, and help text.
+
+### Core gameplay modules
+
+- **`src/game/core/StageState.ts`**: pure turn-resolution logic for movement, push rules, crush behavior, enemy turns, and win/lose transitions.
+- **`src/game/systems/input/InputController.ts`**: keyboard, mouse, and touch intent handling.
+- **`src/game/entities/*`**: visual actors synced from the pure stage state.
+- **`src/game/data/levels/*.json`**: level layout and stage metadata.
+
+## Project structure
+
+```text
+public/assets
+  audio/
+  sprites/
+docs/
+  ARCHITECTURE.md
+  DOCUMENTATION_POLICY.md
+  GAMEPLAY_MECHANICS.md
+src/game
+  config.ts
+  core/
+  data/levels/
+  entities/
+  scenes/
+  systems/ai/
+  systems/input/
+  systems/physics/
+  tests/
+  types/
+  utils/
+```
+
+## Local development
+
+```bash
+npm install
+npm run dev
+```
+
+Open the local Vite URL in your browser.
+
+## Quality checks
+
+```bash
+npm test
+npm run lint
+npm run build
+```
+
+## Production build
+
+```bash
+npm run build
+npm run preview
+```
+
+The project builds into `dist/` and is suitable for static hosting.
+
+## Level data
+
+Levels are defined in JSON under `src/game/data/levels/` using the `LevelData` contract from `src/game/types/level.ts`.
+
+Current schema fields:
+
+- `name`: display name for the stage
+- `tileSize`: rendered tile size in pixels
+- `width`, `height`: logical board dimensions in tiles
+- `par`: advisory design metadata for future scoring/difficulty use
+- `objective`: HUD text shown to the player
+- `playerSpawn`: starting player tile
+- `blocks`: initial pushable block positions
+- `enemies`: initial enemy definitions
+- `goals`: exit tile positions required for stage completion after enemies are cleared
+- `walls` *(optional)*: blocked tiles that cannot be occupied or pushed into
+
+## Notes
+
+- The included visuals are lightweight placeholders; the current push SFX is generated at runtime to keep the repository PR-safe and binary-light.
+- The gameplay rules were recreated from scratch for this prototype.
+- The first stage is intentionally designed to demonstrate pushing, baiting enemies, and clearing the exit in a compact arena.
+- Documentation should stay synchronized with behavior whenever mechanics, architecture, or data contracts change.
