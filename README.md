@@ -86,6 +86,17 @@ npm run dev
 
 Open the local Vite URL in your browser.
 
+
+## GitHub Pages deployment
+
+This project is ready to deploy as a static site on GitHub Pages for the repository `tarikdsm/StoneAge`.
+
+- Expected public URL: `https://tarikdsm.github.io/StoneAge/`
+- The Vite build is configured with the `/StoneAge/` base path so bundled scripts and static assets resolve correctly on GitHub Pages.
+- The GitHub Actions workflow at `.github/workflows/deploy-pages.yml` installs dependencies with `npm ci`, builds the project with `npm run build`, uploads `dist/` as the Pages artifact, and deploys that artifact to GitHub Pages on pushes to `main` or when run manually.
+
+To use the workflow, enable **GitHub Pages** in the repository settings and set the source to **GitHub Actions**. After that, each push to `main` will publish the latest build.
+
 ## Quality checks
 
 ```bash
