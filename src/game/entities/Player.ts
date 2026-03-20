@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { GridActor } from './GridActor'
+import type { PlayerState } from '../core/StageState'
 import type { GridPoint } from '../types/level'
 
 export class Player extends GridActor {
@@ -15,5 +16,9 @@ export class Player extends GridActor {
 
     this.add([shadow, body, accent])
     scene.add.existing(this)
+  }
+
+  syncFromState(state: PlayerState): void {
+    this.syncToGrid(state.worldPosition)
   }
 }

@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { GridActor } from './GridActor'
+import type { BlockState } from '../core/StageState'
 import type { GridPoint } from '../types/level'
 
 export class Block extends GridActor {
@@ -16,5 +17,9 @@ export class Block extends GridActor {
     const seam = scene.add.rectangle(0, 0, tileSize * 0.62, 4, 0x8b5e3c, 0.65)
     this.add([shadow, sprite, shine, seam])
     scene.add.existing(this)
+  }
+
+  syncFromState(state: BlockState): void {
+    this.syncToGrid(state.worldPosition)
   }
 }

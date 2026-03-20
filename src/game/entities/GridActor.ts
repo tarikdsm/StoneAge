@@ -11,29 +11,18 @@ export class GridActor extends Phaser.GameObjects.Container {
     this.tileSize = tileSize
     this.boardOrigin = boardOrigin
     this.gridPosition = { ...gridPosition }
-    this.syncToGrid(true)
+    this.syncToGrid(gridPosition)
   }
 
-  setGridPosition(next: GridPoint, immediate = false): void {
-    this.gridPosition = { ...next }
-    this.syncToGrid(immediate)
+  setGridPosition(gridPosition: GridPoint): void {
+    this.syncToGrid(gridPosition)
   }
 
-  syncToGrid(immediate = false): void {
-    const worldX = this.boardOrigin.x + this.gridPosition.x * this.tileSize + this.tileSize / 2
-    const worldY = this.boardOrigin.y + this.gridPosition.y * this.tileSize + this.tileSize / 2
-
-    if (immediate) {
-      this.setPosition(worldX, worldY)
-      return
-    }
-
-    this.scene.tweens.add({
-      targets: this,
-      x: worldX,
-      y: worldY,
-      duration: 90,
-      ease: 'Quad.Out'
-    })
+  syncToGrid(gridPosition: GridPoint): void {
+    this.gridPosition = { ...gridPosition }
+    this.setPosition(
+      this.boardOrigin.x + gridPosition.x * this.tileSize + this.tileSize / 2,
+      this.boardOrigin.y + gridPosition.y * this.tileSize + this.tileSize / 2
+    )
   }
 }

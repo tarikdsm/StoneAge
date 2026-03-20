@@ -2,7 +2,7 @@
 
 A production-minded web game prototype inspired by **Atari Stone Age / Pengo**, built with **Phaser 3 + TypeScript + Vite**.
 
-This project recreates the core push/crush gameplay loop in a modern browser-friendly structure rather than attempting a direct code port. The current foundation includes one complete playable stage, responsive desktop and touch controls, JSON-authored level data, automated non-visual tests, placeholder art/audio, and a maintainable documentation standard for future development.
+This project recreates the core push/crush gameplay loop in a modern browser-friendly structure rather than attempting a direct code port. The current foundation includes one complete playable stage, responsive desktop and touch controls, JSON-authored level data, automated non-visual tests, placeholder art/audio, and a maintainable documentation standard for future development. The current gameplay model is a continuous real-time simulation: enemies keep moving while the player is idle, while grid alignment still keeps movement, pushing, and crush rules readable and testable.
 
 ## Features
 
@@ -48,7 +48,7 @@ This project recreates the core push/crush gameplay loop in a modern browser-fri
 
 ### Core gameplay modules
 
-- **`src/game/core/StageState.ts`**: pure turn-resolution logic for movement, push rules, crush behavior, enemy turns, and win/lose transitions.
+- **`src/game/core/StageState.ts`**: the pure real-time simulation model for movement, push rules, crush behavior, enemy pursuit, and win/lose transitions.
 - **`src/game/systems/input/InputController.ts`**: keyboard, mouse, and touch intent handling.
 - **`src/game/entities/*`**: visual actors synced from the pure stage state.
 - **`src/game/data/levels/*.json`**: level layout and stage metadata.
@@ -113,6 +113,13 @@ npm run preview
 ```
 
 The project builds into `dist/` and is suitable for static hosting.
+
+## Real-time gameplay model
+
+- The game now simulates motion every frame using delta time instead of waiting for discrete turns.
+- Player, enemy, and pushed-block movement travel continuously between tile centers while rules still use the grid for collision, pushing, and goal checks.
+- Enemies continue pursuing the player even when the player gives no input.
+- Pushes are now real-time actions that start block motion immediately and can crush enemies occupying the destination lane.
 
 ## Level data
 
