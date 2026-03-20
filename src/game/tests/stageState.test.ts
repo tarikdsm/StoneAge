@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createStageState, resolveTurn } from '../core/StageState'
+import { createStageState, stepStageState } from '../core/StageState'
 import type { LevelData } from '../types/level'
 
 const testLevel: LevelData = {
@@ -24,75 +24,87 @@ const testLevel: LevelData = {
   ]
 }
 
-describe('StageState resolveTurn', () => {
-  it('moves the player into open tiles but not into blocks', () => {
-    const state = createStageState(testLevel)
+function advance(level: LevelData, state = createStageState(level), steps = 1, input: { moveDirection?: 'up' | 'down' | 'left' | 'right'; pushDirection?: 'up' | 'down' | 'left' | 'right' } = {}): typeof state {
+  for (let index = 0; index < steps; index += 1) {
+    stepStageState(level, state, input, 200)
+  }
+  return state
+}
 
-    const moved = resolveTurn(testLevel, state, { type: 'move', direction: 'up' }).state
-    expect(moved.player).toEqual({ x: 2, y: 2 })
-
-    const blocked = resolveTurn(testLevel, state, { type: 'move', direction: 'right' }).state
-    expect(blocked.player).toEqual({ x: 2, y: 3 })
-  })
-
-  it('pushes a block when space exists and does not move through walls', () => {
+describe('StageState real-time simulation', () => {
+  it('moves the player continuously while movement input is held', () => {
     const state = createStageState({
       ...testLevel,
       enemies: []
     })
 
-    const outcome = resolveTurn({ ...testLevel, enemies: [] }, state, { type: 'push', direction: 'right' })
-    expect(outcome.pushedBlockId).toBe('block-0')
-    expect(outcome.state.blocks[0]?.position).toEqual({ x: 4, y: 3 })
+    stepStageState(testLevel, state, { moveDirection: 'up' }, 100)
+    expect(state.player.motion?.to).toEqual({ x: 2, y: 2 })
+    expect(state.player.worldPosition.y).toBeLessThan(3)
 
-    const wallLevel: LevelData = {
-      ...testLevel,
-      enemies: [],
-      blocks: [{ x: 4, y: 3 }],
-      walls: [...(testLevel.walls ?? []), { x: 5, y: 3 }]
-    }
-    const blockedOutcome = resolveTurn(wallLevel, createStageState(wallLevel), { type: 'push', direction: 'right' })
-    expect(blockedOutcome.pushedBlockId).toBeUndefined()
-    expect(blockedOutcome.state.blocks[0]?.position).toEqual({ x: 4, y: 3 })
+    stepStageState(testLevel, state, { moveDirection: 'up' }, 200)
+    expect(state.player.gridPosition).toEqual({ x: 2, y: 2 })
+
+    stepStageState(testLevel, state, { moveDirection: 'up' }, 200)
+    expect(state.player.gridPosition).toEqual({ x: 2, y: 1 })
   })
 
-  it('crushes an enemy when a pushed block reaches its tile', () => {
+  it('keeps enemies moving even while the player is idle', () => {
+    const idleLevel: LevelData = {
+      ...testLevel,
+      blocks: []
+    }
+    const state = createStageState(idleLevel)
+
+    stepStageState(idleLevel, state, {}, 100)
+    expect(state.enemies[0]?.motion?.to).toEqual({ x: 4, y: 3 })
+
+    stepStageState(idleLevel, state, {}, 400)
+    expect(state.enemies[0]?.gridPosition).toEqual({ x: 4, y: 3 })
+  })
+
+  it('pushes blocks in real time and crushes enemies in the destination tile', () => {
     const crushLevel: LevelData = {
       ...testLevel,
-      playerSpawn: { x: 2, y: 3 },
-      blocks: [{ x: 3, y: 3 }],
       enemies: [{ type: 'basic', x: 4, y: 3 }]
     }
+    const state = createStageState(crushLevel)
 
-    const outcome = resolveTurn(crushLevel, createStageState(crushLevel), { type: 'push', direction: 'right' })
+    const outcome = stepStageState(crushLevel, state, { pushDirection: 'right' }, 16)
+    expect(outcome.pushedBlockId).toBe('block-0')
     expect(outcome.crushedEnemyIds).toEqual(['enemy-0'])
-    expect(outcome.state.enemies[0]?.alive).toBe(false)
-    expect(outcome.state.blocks[0]?.position).toEqual({ x: 4, y: 3 })
+    expect(state.enemies[0]?.alive).toBe(false)
+    expect(state.blocks[0]?.motion?.to).toEqual({ x: 4, y: 3 })
+
+    stepStageState(crushLevel, state, {}, 200)
+    expect(state.blocks[0]?.gridPosition).toEqual({ x: 4, y: 3 })
   })
 
-  it('marks the game as lost when an enemy reaches the player', () => {
+  it('marks the game as lost when a moving enemy reaches the player without a player turn', () => {
     const chaseLevel: LevelData = {
       ...testLevel,
       blocks: [],
       enemies: [{ type: 'basic', x: 2, y: 2 }]
     }
+    const state = createStageState(chaseLevel)
 
-    const outcome = resolveTurn(chaseLevel, createStageState(chaseLevel), { type: 'push', direction: 'left' })
-    expect(outcome.state.status).toBe('lost')
-    expect(outcome.state.message).toContain('caught')
+    advance(chaseLevel, state, 3)
+    expect(state.status).toBe('lost')
+    expect(state.message).toContain('caught')
   })
 
-  it('marks the game as won only after enemies are gone and the player reaches the goal', () => {
+  it('marks the game as won after all enemies are gone and the player reaches the goal', () => {
     const winLevel: LevelData = {
       ...testLevel,
       blocks: [],
       enemies: [],
       playerSpawn: { x: 4, y: 5 }
     }
+    const state = createStageState(winLevel)
 
-    const outcome = resolveTurn(winLevel, createStageState(winLevel), { type: 'move', direction: 'right' })
-    expect(outcome.state.player).toEqual({ x: 5, y: 5 })
-    expect(outcome.state.status).toBe('won')
-    expect(outcome.state.message).toContain('Stage clear')
+    advance(winLevel, state, 2, { moveDirection: 'right' })
+    expect(state.player.gridPosition).toEqual({ x: 5, y: 5 })
+    expect(state.status).toBe('won')
+    expect(state.message).toContain('Stage clear')
   })
 })
