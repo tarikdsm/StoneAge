@@ -6,6 +6,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
+    this.load.setBaseURL(import.meta.env.BASE_URL)
     this.load.setPath('assets')
     this.load.image('player', 'sprites/player.svg')
     this.load.image('block', 'sprites/block.svg')
