@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite'
 
+const repoBasePath = '/StoneAge/'
+
 export default defineConfig({
-  base: './',
+  base: repoBasePath,
   build: {
     chunkSizeWarningLimit: 1500
   },
