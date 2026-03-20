@@ -2,7 +2,7 @@
 
 A production-minded web game prototype inspired by **Atari Stone Age / Pengo**, built with **Phaser 3 + TypeScript + Vite**.
 
-This project recreates the core push/crush gameplay loop in a modern browser-friendly structure rather than attempting a direct code port. The current foundation includes one complete playable stage, responsive desktop and touch controls, JSON-authored level data, automated non-visual tests, placeholder art/audio, and a maintainable documentation standard for future development.
+This project recreates the core push/crush gameplay loop in a modern browser-friendly structure rather than attempting a direct code port. The current foundation includes one complete playable stage, responsive desktop and touch controls, JSON-authored level data, automated non-visual tests, placeholder art/audio, and a maintainable documentation standard for future development. The current gameplay model is a continuous real-time simulation: enemies keep moving while the player is idle, while grid alignment still keeps movement, pushing, and crush rules readable and testable.
 
 ## Features
 
@@ -48,7 +48,7 @@ This project recreates the core push/crush gameplay loop in a modern browser-fri
 
 ### Core gameplay modules
 
-- **`src/game/core/StageState.ts`**: pure turn-resolution logic for movement, push rules, crush behavior, enemy turns, and win/lose transitions.
+- **`src/game/core/StageState.ts`**: the pure real-time simulation model for movement, push rules, crush behavior, enemy pursuit, and win/lose transitions.
 - **`src/game/systems/input/InputController.ts`**: keyboard, mouse, and touch intent handling.
 - **`src/game/entities/*`**: visual actors synced from the pure stage state.
 - **`src/game/data/levels/*.json`**: level layout and stage metadata.
@@ -86,6 +86,17 @@ npm run dev
 
 Open the local Vite URL in your browser.
 
+
+## GitHub Pages deployment
+
+This project is ready to deploy as a static site on GitHub Pages for the repository `tarikdsm/StoneAge`.
+
+- Expected public URL: `https://tarikdsm.github.io/StoneAge/`
+- The Vite build is configured with the `/StoneAge/` base path so bundled scripts and static assets resolve correctly on GitHub Pages.
+- The GitHub Actions workflow at `.github/workflows/deploy-pages.yml` installs dependencies with `npm ci`, builds the project with `npm run build`, uploads `dist/` as the Pages artifact, and deploys that artifact to GitHub Pages on pushes to `main` or when run manually.
+
+To use the workflow, enable **GitHub Pages** in the repository settings and set the source to **GitHub Actions**. After that, each push to `main` will publish the latest build.
+
 ## Quality checks
 
 ```bash
@@ -103,6 +114,13 @@ npm run preview
 
 The project builds into `dist/` and is suitable for static hosting.
 
+## Real-time gameplay model
+
+- The game now simulates motion every frame using delta time instead of waiting for discrete turns.
+- Player, enemy, and pushed-block movement travel continuously between tile centers while rules still use the grid for collision, pushing, and goal checks.
+- Enemies continue pursuing the player even when the player gives no input.
+- Pushes are now real-time actions that start block motion immediately and can crush enemies occupying the destination lane.
+
 ## Level data
 
 Levels are defined in JSON under `src/game/data/levels/` using the `LevelData` contract from `src/game/types/level.ts`.
@@ -111,7 +129,7 @@ Current schema fields:
 
 - `name`: display name for the stage
 - `tileSize`: rendered tile size in pixels
-- `width`, `height`: logical board dimensions in tiles
+- `width`, `height`: total logical board dimensions in tiles; authored border walls, if present, reduce the open playable interior
 - `par`: advisory design metadata for future scoring/difficulty use
 - `objective`: HUD text shown to the player
 - `playerSpawn`: starting player tile
@@ -124,5 +142,5 @@ Current schema fields:
 
 - The included visuals are lightweight placeholders; the current push SFX is generated at runtime to keep the repository PR-safe and binary-light.
 - The gameplay rules were recreated from scratch for this prototype.
-- The first stage is intentionally designed to demonstrate pushing, baiting enemies, and clearing the exit in a compact arena.
+- The first stage uses a classic opening-style arrangement: five movable ice blocks, three raiders, and six fixed interior columns within a compact but readable arena.
 - Documentation should stay synchronized with behavior whenever mechanics, architecture, or data contracts change.

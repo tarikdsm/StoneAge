@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { GridActor } from './GridActor'
+import type { EnemyState } from '../core/StageState'
 import type { GridPoint } from '../types/level'
 
 export class Enemy extends GridActor {
@@ -15,6 +16,10 @@ export class Enemy extends GridActor {
     const eyeR = scene.add.circle(tileSize * 0.1, -tileSize * 0.05, tileSize * 0.05, 0x0f172a)
     this.add([shadow, sprite, eyeL, eyeR])
     scene.add.existing(this)
+  }
+
+  syncFromState(state: EnemyState): void {
+    this.syncToGrid(state.worldPosition)
   }
 
   squash(): void {

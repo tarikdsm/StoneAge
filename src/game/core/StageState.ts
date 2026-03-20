@@ -1,166 +1,139 @@
 import type { Direction, EnemyDefinition, GridPoint, LevelData } from '../types/level'
 import { addPoints, directionVectors, samePoint } from '../utils/grid'
 
-/** Pushable block state tracked by the pure turn resolver. */
-export interface BlockState {
-  id: string
-  position: GridPoint
+const PLAYER_SPEED = 5.6
+const ENEMY_SPEED = 3.1
+const BLOCK_PUSH_SPEED = 7.2
+const PUSH_COOLDOWN_MS = 180
+
+export interface MotionState {
+  from: GridPoint
+  to: GridPoint
+  direction: Direction
+  progress: number
 }
 
-/** Living/dead enemy state tracked independently from Phaser display objects. */
-export interface EnemyState {
+export interface ActorState {
+  gridPosition: GridPoint
+  worldPosition: GridPoint
+  motion?: MotionState
+}
+
+export interface BlockState extends ActorState {
+  id: string
+}
+
+export interface EnemyState extends ActorState {
   id: string
   type: EnemyDefinition['type']
-  position: GridPoint
   alive: boolean
 }
 
-/**
- * Authoritative gameplay state for a single stage.
- *
- * `GameScene` renders from this structure, but gameplay rules are resolved here
- * so they can be tested without Phaser.
- */
+export interface PlayerState extends ActorState {
+  facing: Direction
+  pushCooldownMs: number
+}
+
 export interface StageState {
-  player: GridPoint
+  player: PlayerState
   blocks: BlockState[]
   enemies: EnemyState[]
-  turn: number
+  elapsedMs: number
   status: 'playing' | 'won' | 'lost'
   message: string
 }
 
-/**
- * Result payload returned after a command is resolved.
- *
- * The outcome intentionally includes enough metadata for scenes to animate and
- * present feedback without re-deriving gameplay rules from visual state.
- */
-export interface TurnOutcome {
-  state: StageState
-  playerMoved: boolean
+export interface SimulationInput {
+  moveDirection?: Direction
+  pushDirection?: Direction
+}
+
+export interface SimulationOutcome {
   pushedBlockId?: string
   crushedEnemyIds: string[]
-  enemyMoves: Array<{ id: string; from: GridPoint; to: GridPoint }>
+  playerMoved: boolean
+  statusChanged: boolean
 }
 
-/** Creates a fresh runtime state from immutable level content. */
 export function createStageState(level: LevelData): StageState {
   return {
-    player: { ...level.playerSpawn },
-    blocks: level.blocks.map((block, index) => ({ id: `block-${index}`, position: { ...block } })),
-    enemies: level.enemies.map((enemy, index) => ({
-      id: `enemy-${index}`,
-      type: enemy.type,
-      position: { x: enemy.x, y: enemy.y },
-      alive: true
-    })),
-    turn: 0,
+    player: createPlayerState(level.playerSpawn),
+    blocks: level.blocks.map((block, index) => createBlockState(`block-${index}`, block)),
+    enemies: level.enemies.map((enemy, index) => createEnemyState(`enemy-${index}`, enemy.type, enemy)),
+    elapsedMs: 0,
     status: 'playing',
-    message: 'Clear the raiders with clever shoves.'
+    message: 'Keep moving. Crush the raiders and reach the exit.'
   }
 }
 
-/**
- * Resolves one player command and the full enemy response turn.
- *
- * Order of operations:
- * 1. apply the player move/push if legal
- * 2. crush any enemy displaced by a pushed block
- * 3. move surviving enemies one at a time
- * 4. evaluate win/lose messaging for the resulting state
- */
-export function resolveTurn(level: LevelData, state: StageState, command: { type: 'move' | 'push'; direction: Direction }): TurnOutcome {
+export function stepStageState(level: LevelData, state: StageState, input: SimulationInput, deltaMs: number): SimulationOutcome {
+  const outcome: SimulationOutcome = {
+    crushedEnemyIds: [],
+    playerMoved: false,
+    statusChanged: false
+  }
+
   if (state.status !== 'playing') {
-    return { state, playerMoved: false, crushedEnemyIds: [], enemyMoves: [] }
+    return outcome
   }
 
-  const nextState = cloneState(state)
-  let playerMoved = false
-  let pushedBlockId: string | undefined
-  const crushedEnemyIds: string[] = []
-  const vector = directionVectors[command.direction]
+  state.elapsedMs += deltaMs
+  state.player.pushCooldownMs = Math.max(0, state.player.pushCooldownMs - deltaMs)
 
-  if (command.type === 'move') {
-    const target = addPoints(nextState.player, vector)
-    if (canOccupy(level, target, nextState.blocks, nextState.enemies)) {
-      nextState.player = target
-      playerMoved = true
-    }
-  } else {
-    const blockTarget = addPoints(nextState.player, vector)
-    const block = nextState.blocks.find((candidate) => samePoint(candidate.position, blockTarget))
+  const pushDirection = input.pushDirection ?? input.moveDirection ?? state.player.facing
+  if (pushDirection) {
+    state.player.facing = pushDirection
+  }
 
-    if (block) {
-      const destination = addPoints(block.position, vector)
-      if (canBlockMoveTo(level, destination, nextState.blocks)) {
-        const enemy = nextState.enemies.find((candidate) => candidate.alive && samePoint(candidate.position, destination))
-        if (enemy) {
-          enemy.alive = false
-          crushedEnemyIds.push(enemy.id)
-        }
-
-        block.position = destination
-        pushedBlockId = block.id
-      }
+  if (pushDirection && state.player.pushCooldownMs <= 0 && !state.player.motion) {
+    const pushResult = attemptPush(level, state, pushDirection)
+    if (pushResult) {
+      state.player.pushCooldownMs = PUSH_COOLDOWN_MS
+      outcome.pushedBlockId = pushResult.blockId
+      outcome.crushedEnemyIds.push(...pushResult.crushedEnemyIds)
     }
   }
 
-  const enemyMoves = moveEnemies(level, nextState)
-  nextState.turn += 1
-  nextState.message = describeState(level, nextState)
+  if (input.moveDirection) {
+    state.player.facing = input.moveDirection
+  }
 
-  return { state: nextState, playerMoved, pushedBlockId, crushedEnemyIds, enemyMoves }
-}
-
-/** Returns whether a tile is legally occupiable by the player or an enemy. */
-export function canOccupy(level: LevelData, point: GridPoint, blocks: BlockState[], enemies: EnemyState[]): boolean {
-  return isInside(level, point)
-    && !isWall(level, point)
-    && !blocks.some((block) => samePoint(block.position, point))
-    && !enemies.some((enemy) => enemy.alive && samePoint(enemy.position, point))
-}
-
-/** Returns whether a pushed block may enter the destination tile. */
-export function canBlockMoveTo(level: LevelData, point: GridPoint, blocks: BlockState[]): boolean {
-  return isInside(level, point)
-    && !isWall(level, point)
-    && !blocks.some((block) => samePoint(block.position, point))
-}
-
-/**
- * Resolves the enemy phase after the player action.
- *
- * Enemies move sequentially in array order. A loss occurs if any living enemy
- * reaches the player's tile after movement. A win requires all enemies to be
- * defeated and the player to already be standing on a goal tile.
- */
-export function moveEnemies(level: LevelData, state: StageState): Array<{ id: string; from: GridPoint; to: GridPoint }> {
-  const moves: Array<{ id: string; from: GridPoint; to: GridPoint }> = []
+  if (input.moveDirection && !state.player.motion) {
+    outcome.playerMoved = startPlayerMove(level, state, input.moveDirection)
+  }
 
   for (const enemy of state.enemies) {
-    if (!enemy.alive || state.status !== 'playing') {
+    if (!enemy.alive || enemy.motion) {
       continue
     }
 
-    const next = chooseEnemyMove(level, enemy.position, state.player, state.blocks, state.enemies, enemy.id)
-    const from = { ...enemy.position }
-    enemy.position = next
-    moves.push({ id: enemy.id, from, to: { ...next } })
-
-    if (samePoint(enemy.position, state.player)) {
-      state.status = 'lost'
+    const direction = chooseEnemyDirection(level, state, enemy)
+    if (direction) {
+      startMotion(enemy, direction)
     }
   }
 
-  if (state.status === 'playing' && state.enemies.every((enemy) => !enemy.alive) && isGoal(level, state.player)) {
-    state.status = 'won'
+  advanceActor(state.player, PLAYER_SPEED, deltaMs)
+  for (const block of state.blocks) {
+    advanceActor(block, BLOCK_PUSH_SPEED, deltaMs)
+  }
+  for (const enemy of state.enemies) {
+    if (enemy.alive) {
+      advanceActor(enemy, ENEMY_SPEED, deltaMs)
+    }
   }
 
-  return moves
+  const previousStatus = state.status
+  updateStageStatus(level, state)
+  state.message = describeState(level, state)
+  outcome.statusChanged = previousStatus !== state.status
+  return outcome
 }
 
-/** Maps the current state to the HUD message shown to the player. */
+export function isGoal(level: LevelData, point: GridPoint): boolean {
+  return level.goals.some((goal) => samePoint(goal, point))
+}
+
 export function describeState(level: LevelData, state: StageState): string {
   if (state.status === 'won') {
     return 'Stage clear! Tap or press Enter to play again.'
@@ -171,73 +144,229 @@ export function describeState(level: LevelData, state: StageState): string {
   }
 
   if (state.enemies.every((enemy) => !enemy.alive)) {
-    return isGoal(level, state.player)
+    return isGoal(level, state.player.gridPosition)
       ? 'Stage clear!'
-      : 'All raiders are down. Head to the glowing exit.'
+      : 'The exit is open. Move onto the glowing tile.'
   }
 
-  return 'Crush raiders, then step onto the exit.'
+  return 'Raiders keep moving. Use blocks to crush them safely.'
 }
 
-/** Returns whether the specified tile is one of the level's exit goals. */
-export function isGoal(level: LevelData, point: GridPoint): boolean {
-  return level.goals.some((goal) => samePoint(goal, point))
+function createPlayerState(spawn: GridPoint): PlayerState {
+  return {
+    gridPosition: { ...spawn },
+    worldPosition: { ...spawn },
+    facing: 'right',
+    pushCooldownMs: 0
+  }
 }
 
-/**
- * Chooses the enemy's next tile using the current prototype AI rule set.
- *
- * The enemy selects the legal move that minimizes Manhattan distance to the
- * player. Ties currently favor horizontal progress to keep movement stable.
- */
-function chooseEnemyMove(
-  level: LevelData,
-  enemyPosition: GridPoint,
-  playerPosition: GridPoint,
-  blocks: BlockState[],
-  enemies: EnemyState[],
-  enemyId: string
-): GridPoint {
+function createBlockState(id: string, position: GridPoint): BlockState {
+  return {
+    id,
+    gridPosition: { ...position },
+    worldPosition: { ...position }
+  }
+}
+
+function createEnemyState(id: string, type: EnemyDefinition['type'], position: GridPoint): EnemyState {
+  return {
+    id,
+    type,
+    alive: true,
+    gridPosition: { ...position },
+    worldPosition: { ...position }
+  }
+}
+
+function advanceActor(actor: ActorState, speedTilesPerSecond: number, deltaMs: number): void {
+  if (!actor.motion) {
+    actor.worldPosition = { ...actor.gridPosition }
+    return
+  }
+
+  actor.motion.progress = Math.min(1, actor.motion.progress + (speedTilesPerSecond * deltaMs) / 1000)
+  actor.worldPosition = interpolate(actor.motion.from, actor.motion.to, actor.motion.progress)
+
+  if (actor.motion.progress >= 1) {
+    actor.gridPosition = { ...actor.motion.to }
+    actor.worldPosition = { ...actor.motion.to }
+    actor.motion = undefined
+  }
+}
+
+function interpolate(from: GridPoint, to: GridPoint, progress: number): GridPoint {
+  return {
+    x: from.x + (to.x - from.x) * progress,
+    y: from.y + (to.y - from.y) * progress
+  }
+}
+
+function attemptPush(level: LevelData, state: StageState, direction: Direction): { blockId: string; crushedEnemyIds: string[] } | undefined {
+  const blockOrigin = addPoints(state.player.gridPosition, directionVectors[direction])
+  const block = state.blocks.find((candidate) => samePoint(candidate.gridPosition, blockOrigin) && !candidate.motion)
+  if (!block) {
+    return undefined
+  }
+
+  const destination = addPoints(block.gridPosition, directionVectors[direction])
+  if (!canBlockOccupy(level, state, destination, block.id)) {
+    return undefined
+  }
+
+  const crushedEnemyIds = crushEnemiesInCell(state, destination)
+  startMotion(block, direction)
+  return {
+    blockId: block.id,
+    crushedEnemyIds
+  }
+}
+
+function startPlayerMove(level: LevelData, state: StageState, direction: Direction): boolean {
+  const destination = addPoints(state.player.gridPosition, directionVectors[direction])
+  if (!canActorOccupy(level, state, destination)) {
+    return false
+  }
+
+  startMotion(state.player, direction)
+  return true
+}
+
+function chooseEnemyDirection(level: LevelData, state: StageState, enemy: EnemyState): Direction | undefined {
   const directions: Direction[] = ['left', 'right', 'up', 'down']
+  const playerTarget = state.player.motion?.to ?? state.player.gridPosition
 
   const ranked = directions
-    .map((direction) => addPoints(enemyPosition, directionVectors[direction]))
-    .filter((point) => isInside(level, point) && !isWall(level, point))
-    .filter((point) => !blocks.some((block) => samePoint(block.position, point)))
-    .filter((point) => !enemies.some((enemy) => enemy.alive && enemy.id !== enemyId && samePoint(enemy.position, point)))
+    .map((direction) => ({
+      direction,
+      destination: addPoints(enemy.gridPosition, directionVectors[direction])
+    }))
+    .filter(({ destination }) => canEnemyOccupy(level, state, enemy.id, destination))
     .sort((a, b) => {
-      const aDistance = Math.abs(a.x - playerPosition.x) + Math.abs(a.y - playerPosition.y)
-      const bDistance = Math.abs(b.x - playerPosition.x) + Math.abs(b.y - playerPosition.y)
+      const aDistance = Math.abs(a.destination.x - playerTarget.x) + Math.abs(a.destination.y - playerTarget.y)
+      const bDistance = Math.abs(b.destination.x - playerTarget.x) + Math.abs(b.destination.y - playerTarget.y)
       if (aDistance !== bDistance) {
         return aDistance - bDistance
       }
 
-      const aHorizontal = Math.abs(a.x - enemyPosition.x)
-      const bHorizontal = Math.abs(b.x - enemyPosition.x)
+      const aHorizontal = Math.abs(a.destination.x - enemy.gridPosition.x)
+      const bHorizontal = Math.abs(b.destination.x - enemy.gridPosition.x)
       return bHorizontal - aHorizontal
     })
 
-  return ranked[0] ?? enemyPosition
+  return ranked[0]?.direction
 }
 
-/** Bounds check against logical board dimensions, not world-space pixels. */
+function canActorOccupy(level: LevelData, state: StageState, point: GridPoint): boolean {
+  return isInside(level, point)
+    && !isWall(level, point)
+    && !isBlockOccupyingCell(state.blocks, point)
+    && !isEnemyOccupyingCell(state.enemies, point)
+}
+
+function canEnemyOccupy(level: LevelData, state: StageState, enemyId: string, point: GridPoint): boolean {
+  return isInside(level, point)
+    && !isWall(level, point)
+    && !isBlockOccupyingCell(state.blocks, point)
+    && !state.enemies.some((enemy) => enemy.alive && enemy.id !== enemyId && occupiesCell(enemy, point))
+}
+
+function canBlockOccupy(level: LevelData, state: StageState, point: GridPoint, movingBlockId: string): boolean {
+  return isInside(level, point)
+    && !isWall(level, point)
+    && !state.blocks.some((block) => block.id !== movingBlockId && occupiesCell(block, point))
+}
+
+function crushEnemiesInCell(state: StageState, point: GridPoint): string[] {
+  const crushedEnemyIds: string[] = []
+
+  for (const enemy of state.enemies) {
+    if (!enemy.alive || !occupiesCell(enemy, point)) {
+      continue
+    }
+
+    enemy.alive = false
+    enemy.motion = undefined
+    enemy.gridPosition = { ...point }
+    enemy.worldPosition = { ...point }
+    crushedEnemyIds.push(enemy.id)
+  }
+
+  return crushedEnemyIds
+}
+
+function startMotion(actor: ActorState, direction: Direction): void {
+  const from = { ...actor.gridPosition }
+  const to = addPoints(from, directionVectors[direction])
+  actor.motion = {
+    from,
+    to,
+    direction,
+    progress: 0
+  }
+  actor.worldPosition = { ...from }
+}
+
+function updateStageStatus(level: LevelData, state: StageState): void {
+  if (playerCaught(state)) {
+    state.status = 'lost'
+    return
+  }
+
+  if (state.enemies.every((enemy) => !enemy.alive) && !state.player.motion && isGoal(level, state.player.gridPosition)) {
+    state.status = 'won'
+    return
+  }
+
+  state.status = 'playing'
+}
+
+function playerCaught(state: StageState): boolean {
+  for (const enemy of state.enemies) {
+    if (!enemy.alive) {
+      continue
+    }
+
+    if (samePoint(enemy.gridPosition, state.player.gridPosition) && !enemy.motion && !state.player.motion) {
+      return true
+    }
+
+    if (occupiesCell(enemy, state.player.gridPosition) || occupiesCell(state.player, enemy.gridPosition)) {
+      return true
+    }
+
+    if (enemy.motion && state.player.motion) {
+      const sameDestination = samePoint(enemy.motion.to, state.player.motion.to)
+      const swapped = samePoint(enemy.motion.from, state.player.motion.to) && samePoint(enemy.motion.to, state.player.motion.from)
+      if (sameDestination || swapped) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+function isBlockOccupyingCell(blocks: BlockState[], point: GridPoint): boolean {
+  return blocks.some((block) => occupiesCell(block, point))
+}
+
+function isEnemyOccupyingCell(enemies: EnemyState[], point: GridPoint): boolean {
+  return enemies.some((enemy) => enemy.alive && occupiesCell(enemy, point))
+}
+
+function occupiesCell(actor: ActorState, point: GridPoint): boolean {
+  if (samePoint(actor.gridPosition, point)) {
+    return true
+  }
+
+  return actor.motion ? samePoint(actor.motion.to, point) : false
+}
+
 function isInside(level: LevelData, point: GridPoint): boolean {
   return point.x >= 0 && point.y >= 0 && point.x < level.width && point.y < level.height
 }
 
-/** Returns whether a tile is blocked by authored wall content. */
 function isWall(level: LevelData, point: GridPoint): boolean {
   return level.walls?.some((wall) => samePoint(wall, point)) ?? false
-}
-
-/** Defensive clone so pure turn resolution never mutates the caller's state. */
-function cloneState(state: StageState): StageState {
-  return {
-    player: { ...state.player },
-    blocks: state.blocks.map((block) => ({ id: block.id, position: { ...block.position } })),
-    enemies: state.enemies.map((enemy) => ({ id: enemy.id, type: enemy.type, alive: enemy.alive, position: { ...enemy.position } })),
-    turn: state.turn,
-    status: state.status,
-    message: state.message
-  }
 }

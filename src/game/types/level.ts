@@ -18,9 +18,10 @@ export interface EnemyDefinition extends GridPoint {
  * Authoritative level schema for JSON-authored stage data.
  *
  * Runtime assumptions:
- * - `width` and `height` define the legal board bounds.
+ * - `width` and `height` define the total legal board bounds.
  * - `playerSpawn`, `blocks`, `enemies`, `goals`, and `walls` are all expressed
- *   in grid coordinates.
+ *   in grid coordinates inside that total board.
+ * - if border walls are authored, they reduce the open interior play area.
  * - `walls` are impassable to both the player and blocks.
  * - reaching a `goal` tile only wins the stage after all enemies are defeated.
  */
