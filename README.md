@@ -142,5 +142,5 @@ Current schema fields:
 
 - The included visuals are lightweight placeholders; the current push SFX is generated at runtime to keep the repository PR-safe and binary-light.
 - The gameplay rules were recreated from scratch for this prototype.
-- The first stage is intentionally designed to demonstrate pushing, baiting enemies, and clearing the exit in a compact arena.
+- The first stage uses a classic opening-style arrangement: five movable ice blocks, three raiders, and six fixed interior columns within a compact but readable arena.
 - Documentation should stay synchronized with behavior whenever mechanics, architecture, or data contracts change.
