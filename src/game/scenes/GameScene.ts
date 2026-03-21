@@ -276,7 +276,7 @@ export class GameScene extends Phaser.Scene {
       enemiesRemaining: this.state.enemies.filter((enemy) => enemy.alive).length,
       objective: this.level.objective,
       status,
-      help: 'Desktop: hold arrows/WASD to move, Space pushes, left click steers, right click pushes. Touch: swipe to steer, tap an adjacent block to push.'
+      help: 'Desktop: hold arrows/WASD to move or push, Space + direction launches a block, left click steers, right click pushes. Touch: swipe to move or push, tap an adjacent block to push, forceful tap launches.'
     }
 
     this.game.events.emit('ui:update', payload)

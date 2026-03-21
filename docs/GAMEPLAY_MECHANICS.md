@@ -36,6 +36,8 @@ This preserves readable/testable rules without falling back to hidden turns.
 
 ## Push rules
 
+- moving into an adjacent block in a cardinal direction performs the normal
+  one-tile push
 - a push only succeeds if a block is directly adjacent in the pushed direction
 - the destination cell must be inside the board
 - the destination cell cannot contain another block or a wall
@@ -46,14 +48,33 @@ This preserves readable/testable rules without falling back to hidden turns.
 - blocks that are truly jammed do not slide; instead, they can be shattered by
   the second move attempt against them
 
+## Block launch rules
+
+- on desktop, pressing **Space + a direction** launches an adjacent block in
+  that direction
+- the player stays in place while the block is launched
+- the block keeps sliding tile-by-tile until the next hard obstacle
+- walls, the board edge, and other blocks stop the launched block
+- if the launched block reaches an NPC, that NPC is crushed and the block stops
+  on the impact tile
+- the same behavior works horizontally and vertically
+- launched blocks still respect the normal push cooldown
+- on touch devices, a strong tap on an adjacent block triggers the same launch
+  action
+
 ## Enemy behavior
 
 - enemies pursue the player continuously
-- each idle enemy chooses a legal adjacent direction that minimizes Manhattan
-  distance to the player's current target tile
+- enemies move a bit slower than the player so chases stay readable while they
+  still apply pressure
+- each idle enemy scores legal adjacent moves by the shortest walkable route to
+  the player's current target tile
 - walls and occupied block cells are never chosen
 - enemies avoid cells already reserved by other living enemies
-- horizontal progress still wins tie-breaks over vertical progress
+- when multiple moves are similarly good, enemies try to avoid immediately
+  reversing their previous move
+- a light per-enemy priority order helps symmetric enemies choose different
+  sides of a maze more often
 
 ## Loss condition
 
@@ -108,15 +129,18 @@ campaign order is `01 -> 02 -> 05`.
 
 ### Desktop gameplay input
 
-- arrows / WASD: movement while held
-- Space: push in the current facing direction
+- arrows / WASD: movement while held, including normal push into adjacent
+  blocks
+- Space + arrows / WASD: launch an adjacent block in that direction
 - left click: set movement intent relative to the player
 - right click: trigger a push relative to the player
 
 ### Touch gameplay input
 
-- swipe: movement intent
+- swipe: movement intent, including normal push into adjacent blocks
 - tap near the player in the direction of an adjacent block: push intent
+- strong tap near the player in the direction of an adjacent block: launch
+  intent
 - other taps: movement intent
 
 These rules reduce accidental pushes while keeping touch play practical.

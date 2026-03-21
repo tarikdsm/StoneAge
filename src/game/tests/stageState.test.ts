@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { createStageState, stepStageState } from '../core/StageState'
 import type { LevelData } from '../types/level'
 
+function createBorderWalls(width: number, height: number) {
+  const walls: Array<{ x: number; y: number }> = []
+
+  for (let x = 0; x < width; x += 1) {
+    walls.push({ x, y: 0 }, { x, y: height - 1 })
+  }
+
+  for (let y = 1; y < height - 1; y += 1) {
+    walls.push({ x: 0, y }, { x: width - 1, y })
+  }
+
+  return walls
+}
+
 const testLevel: LevelData = {
   name: 'Test Chamber',
   tileSize: 64,
@@ -32,6 +46,7 @@ function advance(
     moveDirection?: 'up' | 'down' | 'left' | 'right'
     moveAttemptDirection?: 'up' | 'down' | 'left' | 'right'
     pushDirection?: 'up' | 'down' | 'left' | 'right'
+    throwDirection?: 'up' | 'down' | 'left' | 'right'
   } = {}
 ): typeof state {
   for (let index = 0; index < steps; index += 1) {
@@ -72,6 +87,29 @@ describe('StageState real-time simulation', () => {
     expect(state.enemies[0]?.gridPosition).toEqual({ x: 4, y: 3 })
   })
 
+  it('routes enemies around blockers instead of bouncing left-right in place', () => {
+    const mazeLevel: LevelData = {
+      name: 'Loop Breaker',
+      tileSize: 64,
+      width: 9,
+      height: 9,
+      par: 1,
+      objective: 'Test',
+      playerSpawn: { x: 4, y: 6 },
+      blocks: [{ x: 3, y: 3 }, { x: 4, y: 3 }, { x: 5, y: 3 }],
+      enemies: [{ type: 'basic', x: 4, y: 1 }],
+      goals: [{ x: 7, y: 7 }],
+      walls: [...createBorderWalls(9, 9), { x: 4, y: 2 }]
+    }
+    const state = createStageState(mazeLevel)
+
+    advance(mazeLevel, state, 4)
+    expect(state.enemies[0]?.gridPosition).toEqual({ x: 3, y: 1 })
+
+    advance(mazeLevel, state, 2)
+    expect(state.enemies[0]?.gridPosition).toEqual({ x: 3, y: 2 })
+  })
+
   it('pushes blocks in real time and crushes enemies in the destination tile', () => {
     const crushLevel: LevelData = {
       ...testLevel,
@@ -79,14 +117,56 @@ describe('StageState real-time simulation', () => {
     }
     const state = createStageState(crushLevel)
 
-    const outcome = stepStageState(crushLevel, state, { pushDirection: 'right' }, 16)
+    const outcome = stepStageState(crushLevel, state, { moveDirection: 'right' }, 16)
     expect(outcome.pushedBlockId).toBe('block-0')
     expect(outcome.crushedEnemyIds).toEqual(['enemy-0'])
     expect(state.enemies[0]?.alive).toBe(false)
     expect(state.blocks[0]?.motion?.to).toEqual({ x: 4, y: 3 })
+    expect(state.player.gridPosition).toEqual({ x: 2, y: 3 })
 
     stepStageState(crushLevel, state, {}, 200)
     expect(state.blocks[0]?.gridPosition).toEqual({ x: 4, y: 3 })
+  })
+
+  it('launches a block horizontally with space plus direction until it hits an enemy', () => {
+    const launchLevel: LevelData = {
+      ...testLevel,
+      blocks: [{ x: 3, y: 3 }],
+      enemies: [{ type: 'basic', x: 5, y: 3 }]
+    }
+    const state = createStageState(launchLevel)
+
+    const launchOutcome = stepStageState(launchLevel, state, { moveDirection: 'right', throwDirection: 'right' }, 16)
+    expect(launchOutcome.pushedBlockId).toBe('block-0')
+    expect(state.player.gridPosition).toEqual({ x: 2, y: 3 })
+    expect(launchOutcome.playerMoved).toBe(false)
+    expect(state.blocks[0]?.motion?.to).toEqual({ x: 4, y: 3 })
+
+    const impactOutcome = stepStageState(launchLevel, state, {}, 200)
+    expect(impactOutcome.crushedEnemyIds).toEqual(['enemy-0'])
+    expect(state.enemies[0]?.alive).toBe(false)
+    expect(state.blocks[0]?.motion?.to).toEqual({ x: 5, y: 3 })
+
+    stepStageState(launchLevel, state, {}, 200)
+    expect(state.blocks[0]?.gridPosition).toEqual({ x: 5, y: 3 })
+  })
+
+  it('launches a block vertically until the next hard blocker', () => {
+    const verticalLaunchLevel: LevelData = {
+      ...testLevel,
+      playerSpawn: { x: 3, y: 5 },
+      blocks: [{ x: 3, y: 4 }],
+      enemies: [],
+      walls: [...(testLevel.walls ?? []), { x: 3, y: 1 }]
+    }
+    const state = createStageState(verticalLaunchLevel)
+
+    stepStageState(verticalLaunchLevel, state, { moveDirection: 'up', throwDirection: 'up' }, 16)
+    expect(state.blocks[0]?.motion?.to).toEqual({ x: 3, y: 3 })
+
+    advance(verticalLaunchLevel, state, 2)
+    expect(state.blocks[0]?.gridPosition).toEqual({ x: 3, y: 2 })
+    expect(state.blocks[0]?.motion).toBeUndefined()
   })
 
   it('destroys an immovable block on the second movement attempt against it', () => {

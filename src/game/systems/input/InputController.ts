@@ -3,12 +3,20 @@ import type { Direction, GridPoint } from '../../types/level'
 
 const swipeThreshold = 30
 const deadZone = 8
+const strongTouchPressureThreshold = 0.7
+const repeatedTouchLaunchWindowMs = 260
 
 interface PointerSnapshot {
   screenX: number
   screenY: number
   isTouch: boolean
   button: number
+  pressure: number
+}
+
+interface TouchLaunchMemory {
+  direction: Direction
+  atMs: number
 }
 
 export interface RealtimeInputSnapshot {
@@ -16,6 +24,8 @@ export interface RealtimeInputSnapshot {
   /** One-shot signal used for mechanics that care about a fresh movement attempt. */
   moveAttemptDirection?: Direction
   pushDirection?: Direction
+  /** One-shot signal for launching an adjacent block until it hits something. */
+  throwDirection?: Direction
 }
 
 /**
@@ -30,10 +40,13 @@ export class InputController {
   private pointerMoveDirection?: Direction
   private queuedMoveAttemptDirection?: Direction
   private queuedPushDirection?: Direction
+  private queuedThrowDirection?: Direction
   private getAnchor: () => GridPoint = () => ({ x: 0, y: 0 })
   private getFacing: () => Direction = () => 'right'
   private shouldPush: (direction: Direction) => boolean = () => false
   private movementKeys = new Set<string>()
+  private spaceHeld = false
+  private lastTouchLaunchTap?: TouchLaunchMemory
 
   constructor(private readonly scene: Phaser.Scene, private readonly tileSize: number) {
     this.bindKeyboard()
@@ -56,7 +69,8 @@ export class InputController {
     return {
       moveDirection: this.getMovementDirection(),
       moveAttemptDirection: this.consumeMoveAttemptDirection(),
-      pushDirection: this.consumePushDirection()
+      pushDirection: this.consumePushDirection(),
+      throwDirection: this.consumeThrowDirection()
     }
   }
 
@@ -75,11 +89,18 @@ export class InputController {
           this.queuedMoveAttemptDirection = direction
         }
         this.movementKeys.add(event.code)
+        if (this.spaceHeld) {
+          this.queuedThrowDirection = direction
+        }
         return
       }
 
       if (event.code === 'Space') {
-        this.queuedPushDirection = this.getFacing()
+        this.spaceHeld = true
+        const movementDirection = this.getMovementDirection()
+        if (movementDirection) {
+          this.queuedThrowDirection = movementDirection
+        }
       }
     })
 
@@ -87,6 +108,11 @@ export class InputController {
       const direction = this.directionFromKey(event.code)
       if (direction) {
         this.movementKeys.delete(event.code)
+        return
+      }
+
+      if (event.code === 'Space') {
+        this.spaceHeld = false
       }
     })
   }
@@ -105,7 +131,8 @@ export class InputController {
         screenX: pointer.x,
         screenY: pointer.y,
         isTouch,
-        button
+        button,
+        pressure: this.readTouchPressure(pointerEvent)
       }
 
       if (!isTouch && button === 2) {
@@ -123,6 +150,7 @@ export class InputController {
 
       const start = this.pointerStart
       this.pointerStart = undefined
+      const pointerEvent = pointer.event as PointerEvent | MouseEvent | TouchEvent | undefined
 
       if (!start.isTouch && start.button === 2) {
         return
@@ -149,7 +177,11 @@ export class InputController {
         const anchor = this.getAnchor()
         const closeToPlayer = Math.max(Math.abs(pointer.worldX - anchor.x), Math.abs(pointer.worldY - anchor.y)) <= this.tileSize * 1.1
         if (closeToPlayer && this.shouldPush(direction)) {
-          this.queuedPushDirection = direction
+          if (this.isTouchLaunchGesture(start, direction, pointerEvent)) {
+            this.queuedThrowDirection = direction
+          } else {
+            this.queuedPushDirection = direction
+          }
         } else {
           this.pointerMoveDirection = direction
           this.queuedMoveAttemptDirection = direction
@@ -172,6 +204,12 @@ export class InputController {
     const pushDirection = this.queuedPushDirection
     this.queuedPushDirection = undefined
     return pushDirection
+  }
+
+  private consumeThrowDirection(): Direction | undefined {
+    const throwDirection = this.queuedThrowDirection
+    this.queuedThrowDirection = undefined
+    return throwDirection
   }
 
   private getMovementDirection(): Direction | undefined {
@@ -211,5 +249,45 @@ export class InputController {
     return Math.abs(dx) > Math.abs(dy)
       ? (dx > 0 ? 'right' : 'left')
       : (dy > 0 ? 'down' : 'up')
+  }
+
+  private isTouchLaunchGesture(
+    start: PointerSnapshot,
+    direction: Direction,
+    pointerEvent: PointerEvent | MouseEvent | TouchEvent | undefined
+  ): boolean {
+    const pressure = Math.max(start.pressure, this.readTouchPressure(pointerEvent))
+    if (pressure >= strongTouchPressureThreshold) {
+      this.lastTouchLaunchTap = undefined
+      return true
+    }
+
+    const previousTap = this.lastTouchLaunchTap
+    this.lastTouchLaunchTap = {
+      direction,
+      atMs: this.scene.time.now
+    }
+
+    return previousTap?.direction === direction
+      && this.scene.time.now - previousTap.atMs <= repeatedTouchLaunchWindowMs
+  }
+
+  private readTouchPressure(pointerEvent: PointerEvent | MouseEvent | TouchEvent | undefined): number {
+    if (!pointerEvent) {
+      return 0
+    }
+
+    if ('pressure' in pointerEvent && typeof pointerEvent.pressure === 'number' && pointerEvent.pressure > 0) {
+      return pointerEvent.pressure
+    }
+
+    if ('changedTouches' in pointerEvent) {
+      const touch = pointerEvent.changedTouches[0] ?? pointerEvent.touches[0]
+      if (touch && typeof touch.force === 'number') {
+        return touch.force
+      }
+    }
+
+    return 0
   }
 }

@@ -30,6 +30,9 @@ Pure gameplay logic lives here.
 - `StageState.ts` is the authoritative real-time simulation model.
 - It owns movement, pushing, crush logic, enemy pursuit, win/lose state, and
   jammed-block destruction.
+- It also owns multi-tile launched-block behavior triggered by the input layer.
+- Enemy routing intelligence also lives here, including blocker-aware chase
+  selection.
 - It has no Phaser dependency.
 - It is advanced only through `stepStageState(level, state, input, deltaMs)`.
 

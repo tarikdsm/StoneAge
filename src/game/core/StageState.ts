@@ -2,9 +2,14 @@ import type { Direction, EnemyDefinition, GridPoint, LevelData } from '../types/
 import { addPoints, directionVectors, samePoint } from '../utils/grid'
 
 const PLAYER_SPEED = 5.6
-const ENEMY_SPEED = 3.1
+const ENEMY_SPEED = 2.0
 const BLOCK_PUSH_SPEED = 7.2
 const PUSH_COOLDOWN_MS = 180
+const ENEMY_PATH_DIRECTIONS: Direction[] = ['up', 'left', 'right', 'down']
+const ENEMY_DIRECTION_PRIORITIES: Direction[][] = [
+  ['left', 'right', 'up', 'down'],
+  ['right', 'left', 'down', 'up']
+]
 
 /**
  * Continuous lane-travel state between two tile centers.
@@ -28,12 +33,16 @@ export interface ActorState {
 
 export interface BlockState extends ActorState {
   id: string
+  /** When present, the block keeps sliding tile-by-tile until it hits something. */
+  slideDirection?: Direction
 }
 
 export interface EnemyState extends ActorState {
   id: string
   type: EnemyDefinition['type']
   alive: boolean
+  /** Remembers the last committed move so the chase logic can avoid easy ping-pong reversals. */
+  lastDirection?: Direction
 }
 
 export interface PlayerState extends ActorState {
@@ -66,6 +75,7 @@ export interface SimulationInput {
   moveDirection?: Direction
   moveAttemptDirection?: Direction
   pushDirection?: Direction
+  throwDirection?: Direction
 }
 
 /** Per-step summary consumed by scenes for feedback and SFX decisions. */
@@ -115,18 +125,30 @@ export function stepStageState(level: LevelData, state: StageState, input: Simul
   state.player.pushCooldownMs = Math.max(0, state.player.pushCooldownMs - deltaMs)
   reconcileBlockBreakCharge(level, state)
 
-  const pushDirection = input.pushDirection ?? input.moveDirection ?? state.player.facing
-  if (pushDirection) {
-    state.player.facing = pushDirection
+  const actionDirection = input.throwDirection ?? input.pushDirection ?? input.moveDirection ?? state.player.facing
+  if (actionDirection) {
+    state.player.facing = actionDirection
   }
 
-  if (pushDirection && state.player.pushCooldownMs <= 0 && !state.player.motion) {
-    const pushResult = attemptPush(level, state, pushDirection)
+  let blockActionTaken = false
+  if (input.throwDirection && state.player.pushCooldownMs <= 0 && !state.player.motion) {
+    const throwResult = attemptBlockThrow(level, state, input.throwDirection)
+    if (throwResult) {
+      state.player.pushCooldownMs = PUSH_COOLDOWN_MS
+      outcome.pushedBlockId = throwResult.blockId
+      outcome.crushedEnemyIds.push(...throwResult.crushedEnemyIds)
+      clearBlockBreakCharge(state.player)
+      blockActionTaken = true
+    }
+  } else if (state.player.pushCooldownMs <= 0 && !state.player.motion) {
+    const pushDirection = input.pushDirection ?? input.moveDirection
+    const pushResult = pushDirection ? attemptPush(level, state, pushDirection) : undefined
     if (pushResult) {
       state.player.pushCooldownMs = PUSH_COOLDOWN_MS
       outcome.pushedBlockId = pushResult.blockId
       outcome.crushedEnemyIds.push(...pushResult.crushedEnemyIds)
       clearBlockBreakCharge(state.player)
+      blockActionTaken = true
     }
   }
 
@@ -134,7 +156,7 @@ export function stepStageState(level: LevelData, state: StageState, input: Simul
     state.player.facing = input.moveDirection
   }
 
-  if (input.moveDirection && !state.player.motion) {
+  if (input.moveDirection && !input.throwDirection && !state.player.motion && !blockActionTaken) {
     outcome.playerMoved = startPlayerMove(level, state, input.moveDirection)
     if (outcome.playerMoved) {
       clearBlockBreakCharge(state.player)
@@ -150,13 +172,14 @@ export function stepStageState(level: LevelData, state: StageState, input: Simul
 
     const direction = chooseEnemyDirection(level, state, enemy)
     if (direction) {
+      enemy.lastDirection = direction
       startMotion(enemy, direction)
     }
   }
 
   advanceActor(state.player, PLAYER_SPEED, deltaMs)
   for (const block of state.blocks) {
-    advanceActor(block, BLOCK_PUSH_SPEED, deltaMs)
+    outcome.crushedEnemyIds.push(...advanceBlock(level, state, block, deltaMs))
   }
   for (const enemy of state.enemies) {
     if (enemy.alive) {
@@ -262,6 +285,26 @@ function attemptPush(level: LevelData, state: StageState, direction: Direction):
   }
 }
 
+function attemptBlockThrow(level: LevelData, state: StageState, direction: Direction): { blockId: string; crushedEnemyIds: string[] } | undefined {
+  const block = getAdjacentIdleBlock(state, direction)
+  if (!block) {
+    return undefined
+  }
+
+  const destination = addPoints(block.gridPosition, directionVectors[direction])
+  if (!canThrownBlockEnter(level, state, block.id, destination)) {
+    return undefined
+  }
+
+  const crushedEnemyIds = crushEnemiesInCell(state, destination)
+  block.slideDirection = crushedEnemyIds.length > 0 ? undefined : direction
+  startMotion(block, direction)
+  return {
+    blockId: block.id,
+    crushedEnemyIds
+  }
+}
+
 function startPlayerMove(level: LevelData, state: StageState, direction: Direction): boolean {
   const destination = addPoints(state.player.gridPosition, directionVectors[direction])
   if (!canActorOccupy(level, state, destination)) {
@@ -303,7 +346,7 @@ function handleBlockedBlockAttempt(
 }
 
 function chooseEnemyDirection(level: LevelData, state: StageState, enemy: EnemyState): Direction | undefined {
-  const directions: Direction[] = ['left', 'right', 'up', 'down']
+  const directions = getEnemyDirectionPriority(enemy.id)
   const playerTarget = state.player.motion?.to ?? state.player.gridPosition
 
   const ranked = directions
@@ -313,18 +356,89 @@ function chooseEnemyDirection(level: LevelData, state: StageState, enemy: EnemyS
     }))
     .filter(({ destination }) => canEnemyOccupy(level, state, enemy.id, destination))
     .sort((a, b) => {
+      const aPathDistance = getEnemyPathDistance(level, state, a.destination, playerTarget)
+      const bPathDistance = getEnemyPathDistance(level, state, b.destination, playerTarget)
+      const aCanPathfind = aPathDistance === undefined ? 1 : 0
+      const bCanPathfind = bPathDistance === undefined ? 1 : 0
+      if (aCanPathfind !== bCanPathfind) {
+        return aCanPathfind - bCanPathfind
+      }
+
+      if (aPathDistance !== undefined && bPathDistance !== undefined && aPathDistance !== bPathDistance) {
+        return aPathDistance - bPathDistance
+      }
+
       const aDistance = Math.abs(a.destination.x - playerTarget.x) + Math.abs(a.destination.y - playerTarget.y)
       const bDistance = Math.abs(b.destination.x - playerTarget.x) + Math.abs(b.destination.y - playerTarget.y)
       if (aDistance !== bDistance) {
         return aDistance - bDistance
       }
 
-      const aHorizontal = Math.abs(a.destination.x - enemy.gridPosition.x)
-      const bHorizontal = Math.abs(b.destination.x - enemy.gridPosition.x)
-      return bHorizontal - aHorizontal
+      const aReverses = enemy.lastDirection ? isOppositeDirection(a.direction, enemy.lastDirection) : false
+      const bReverses = enemy.lastDirection ? isOppositeDirection(b.direction, enemy.lastDirection) : false
+      if (aReverses !== bReverses) {
+        return Number(aReverses) - Number(bReverses)
+      }
+
+      return directions.indexOf(a.direction) - directions.indexOf(b.direction)
     })
 
   return ranked[0]?.direction
+}
+
+function getEnemyDirectionPriority(enemyId: string): Direction[] {
+  const enemyIndex = Number(enemyId.split('-')[1] ?? '0')
+  return ENEMY_DIRECTION_PRIORITIES[Math.abs(enemyIndex) % ENEMY_DIRECTION_PRIORITIES.length] as Direction[]
+}
+
+function getEnemyPathDistance(level: LevelData, state: StageState, start: GridPoint, target: GridPoint): number | undefined {
+  if (samePoint(start, target)) {
+    return 0
+  }
+
+  const queue: Array<{ point: GridPoint; distance: number }> = [{ point: start, distance: 0 }]
+  const visited = new Set<string>([pointKey(start)])
+
+  while (queue.length > 0) {
+    const current = queue.shift() as { point: GridPoint; distance: number }
+
+    for (const direction of ENEMY_PATH_DIRECTIONS) {
+      const next = addPoints(current.point, directionVectors[direction])
+      const nextKey = pointKey(next)
+      if (visited.has(nextKey) || !canEnemyPathOccupy(level, state, next)) {
+        continue
+      }
+
+      if (samePoint(next, target)) {
+        return current.distance + 1
+      }
+
+      visited.add(nextKey)
+      queue.push({
+        point: next,
+        distance: current.distance + 1
+      })
+    }
+  }
+
+  return undefined
+}
+
+function canEnemyPathOccupy(level: LevelData, state: StageState, point: GridPoint): boolean {
+  return isInside(level, point)
+    && !isWall(level, point)
+    && !isBlockOccupyingCell(state.blocks, point)
+}
+
+function isOppositeDirection(a: Direction, b: Direction): boolean {
+  return (a === 'left' && b === 'right')
+    || (a === 'right' && b === 'left')
+    || (a === 'up' && b === 'down')
+    || (a === 'down' && b === 'up')
+}
+
+function pointKey(point: GridPoint): string {
+  return `${point.x},${point.y}`
 }
 
 function canActorOccupy(level: LevelData, state: StageState, point: GridPoint): boolean {
@@ -342,6 +456,12 @@ function canEnemyOccupy(level: LevelData, state: StageState, enemyId: string, po
 }
 
 function canBlockOccupy(level: LevelData, state: StageState, point: GridPoint, movingBlockId: string): boolean {
+  return isInside(level, point)
+    && !isWall(level, point)
+    && !state.blocks.some((block) => block.id !== movingBlockId && occupiesCell(block, point))
+}
+
+function canThrownBlockEnter(level: LevelData, state: StageState, movingBlockId: string, point: GridPoint): boolean {
   return isInside(level, point)
     && !isWall(level, point)
     && !state.blocks.some((block) => block.id !== movingBlockId && occupiesCell(block, point))
@@ -390,6 +510,28 @@ function startMotion(actor: ActorState, direction: Direction): void {
     progress: 0
   }
   actor.worldPosition = { ...from }
+}
+
+function advanceBlock(level: LevelData, state: StageState, block: BlockState, deltaMs: number): string[] {
+  const crushedEnemyIds: string[] = []
+
+  advanceActor(block, BLOCK_PUSH_SPEED, deltaMs)
+  if (block.motion || !block.slideDirection) {
+    return crushedEnemyIds
+  }
+
+  const next = addPoints(block.gridPosition, directionVectors[block.slideDirection])
+  if (!canThrownBlockEnter(level, state, block.id, next)) {
+    block.slideDirection = undefined
+    return crushedEnemyIds
+  }
+
+  const impactCrushes = crushEnemiesInCell(state, next)
+  crushedEnemyIds.push(...impactCrushes)
+  const direction = block.slideDirection
+  block.slideDirection = impactCrushes.length > 0 ? undefined : direction
+  startMotion(block, direction)
+  return crushedEnemyIds
 }
 
 function destroyBlock(state: StageState, blockId: string): void {

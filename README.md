@@ -15,7 +15,11 @@ The project combines:
 ## Current feature set
 
 - Real-time grid-aware movement, pushing, crushing, and enemy pursuit
+- Enemy pursuit that can route around blockers instead of getting stuck in
+  simple horizontal loops
 - Jammed blocks that can be shattered on the second move attempt
+- Space plus a direction launches an adjacent block until it hits a wall,
+  another block, or an NPC
 - Campaign progression from Map 01 to the next non-empty published slot
 - Menu hub with `Play` and `Generate Maps`
 - Always-available in-game `Menu` button
@@ -55,12 +59,16 @@ The project combines:
 
 ### Campaign gameplay
 
-- **Arrow keys / WASD**: move while held
-- **Space**: push in the current facing direction
+- **Arrow keys / WASD**: move while held, and auto-push an adjacent block in
+  that direction
+- **Space + arrow/WASD**: launch an adjacent block in that direction until
+  impact
 - **Left mouse click**: movement intent
 - **Right mouse click**: push intent
-- **Touch swipe**: movement intent
+- **Touch swipe**: movement intent, including normal push when swiping into an
+  adjacent block
 - **Touch tap on adjacent block**: push intent
+- **Touch strong tap on adjacent block**: launch intent
 - **HUD `Menu` button**: return to the start screen without reloading the page
 
 ### Map generator
