@@ -37,6 +37,8 @@ Clicking a listed map loads it for editing.
 - always shows a **10x10 playable grid**
 - starts as a blank map when entering the editor
 - clicking a tile applies the currently selected tool
+- that grid is the editable interior only; the fixed runtime border is added
+  later during conversion
 
 ### Right panel
 
@@ -167,8 +169,8 @@ sequence used by the game.
 
 ## Runtime conversion
 
-The editor works on a 10x10 playable area, but gameplay still uses the authored
-runtime board format with border walls.
+The editor works on a 10x10 playable area, but gameplay still uses the
+canonical 12x12 runtime board format with border walls.
 
 On save or upload publish:
 

@@ -151,6 +151,34 @@ export class UIScene extends Phaser.Scene {
       .setWordWrapWidth(panelWidth - 32)
 
     if (hud.narrow) {
+      const titleWrapWidth = Math.max(panelWidth - menuButtonWidth - 48, 120)
+
+      this.menuButton
+        ?.setPosition(innerRight - menuButtonWidth, topPanelTop + 10)
+        .setSize(menuButtonWidth, menuButtonHeight)
+
+      this.menuButtonText
+        ?.setPosition(innerRight - menuButtonWidth / 2, topPanelTop + 10 + menuButtonHeight / 2)
+        .setFontSize(clamp(width * 0.03, 11, 13))
+
+      this.titleText
+        ?.setPosition(innerLeft, topPanelTop + 10)
+        .setOrigin(0, 0)
+        .setFontSize(clamp(width * 0.045, 16, 22))
+        .setWordWrapWidth(titleWrapWidth)
+
+      this.objectiveText
+        ?.setPosition(innerLeft, topPanelTop + 18 + titleSize)
+        .setOrigin(0, 0)
+        .setFontSize(clamp(width * 0.028, 10, 13))
+        .setWordWrapWidth(panelWidth - 32)
+
+      this.enemiesText
+        ?.setPosition(innerLeft, topPanelTop + hud.topPanelHeight - enemiesSize - 12)
+        .setOrigin(0, 0)
+        .setFontSize(clamp(width * 0.04, 13, 18))
+        .setWordWrapWidth(panelWidth - 32)
+
       this.statusText
         ?.setPosition(innerLeft, bottomPanelTop + 12)
         .setOrigin(0, 0)
@@ -164,6 +192,31 @@ export class UIScene extends Phaser.Scene {
         .setWordWrapWidth(panelWidth - 32)
         .setStyle({ align: 'left' })
     } else {
+      this.menuButton
+        ?.setPosition(innerRight - menuButtonWidth, topPanelTop + 12)
+        .setSize(menuButtonWidth, menuButtonHeight)
+
+      this.menuButtonText
+        ?.setPosition(innerRight - menuButtonWidth / 2, topPanelTop + 12 + menuButtonHeight / 2)
+        .setFontSize(clamp(width * 0.012, 12, 14))
+
+      this.titleText
+        ?.setPosition(innerLeft, topPanelTop + 12)
+        .setOrigin(0, 0)
+        .setFontSize(titleSize)
+        .setWordWrapWidth(panelWidth - menuButtonWidth - 52)
+
+      this.enemiesText
+        ?.setPosition(innerRight, topPanelTop + 18 + menuButtonHeight)
+        .setOrigin(1, 0)
+        .setFontSize(enemiesSize)
+
+      this.objectiveText
+        ?.setPosition(innerLeft, topPanelTop + 14 + titleSize)
+        .setOrigin(0, 0)
+        .setFontSize(objectiveSize)
+        .setWordWrapWidth(panelWidth - 32)
+
       this.statusText
         ?.setPosition(innerLeft, bottomPanelTop + 14)
         .setOrigin(0, 0)

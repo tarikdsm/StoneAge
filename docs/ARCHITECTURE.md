@@ -18,7 +18,7 @@ The project is organized around a few stable rules:
 3. `GameScene` loads a published map slot from the level repository, steps the
    pure simulation, and syncs visual actors.
 4. `UIScene` renders gameplay HUD payloads emitted by `GameScene`.
-5. `MapEditorScene` edits 10x10 playable layouts and publishes them back
+5. `MapEditorScene` edits canonical 10x10 playable layouts and publishes them back
    through the same level repository used by the campaign.
 
 ## Subsystem boundaries
@@ -59,6 +59,11 @@ Gameplay content and repository logic live here.
 
 - `public/maps/map01.json` through `public/maps/map99.json` are the canonical
   published map-slot files.
+- `boardGeometry.ts` is the shared geometry source of truth for:
+  - the `10 x 10` editable playable area
+  - the fixed `12 x 12` runtime board
+  - the 1-tile border ring
+  - editor/runtime coordinate conversion
 - `levelRepository.ts` is the authoritative bridge between:
   - published slot files fetched from the static site
   - strict slot-file JSON validation
@@ -84,6 +89,8 @@ Input systems convert raw browser/device input into normalized intent.
 
 Reusable pure helpers live here.
 
+- `boardGeometry.ts` contains the canonical 10x10 playable / 12x12 runtime
+  board contract plus fixed-border conversion helpers
 - `layout.ts` contains viewport/layout math
 - layout logic is kept pure so responsiveness can be reasoned about and tested
   without rendering
@@ -113,7 +120,7 @@ Cross-module contracts live here.
 
 - `MapEditorScene` works with `EditableLevelData`, a 10x10 playable-area model
 - saving routes through `levelRepository.ts`
-- the repository converts editor data into authored runtime `LevelData`
+- the repository converts editor data into canonical 12x12 runtime `LevelData`
 - the repository wraps that level into a `MapSlotFile`
 - on `localhost`, publishing writes the corresponding `public/maps/mapNN.json`
   through a Vite-only local endpoint
@@ -138,7 +145,7 @@ simple.
 Responsive layout is a render concern, not a gameplay concern.
 
 - Phaser runs in `RESIZE` scale mode
-- `GameScene` fits and centers the full authored board in the viewport
+- `GameScene` fits and centers the full 12x12 runtime board in the viewport
 - `UIScene` renders responsive HUD bands independently of gameplay rules
 - `MapEditorScene` lays out left panel, center board, and right palette
   responsively for desktop and touch browsers

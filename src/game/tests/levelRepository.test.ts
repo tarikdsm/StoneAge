@@ -1,6 +1,6 @@
+import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  AUTHORED_BOARD_SIZE,
   buildLevelFromEditableLevel,
   buildMapSlotFileFromEditableLevel,
   createEmptyEditableLevel,
@@ -19,9 +19,10 @@ import {
 } from '../data/levelRepository'
 import type { EditableLevelData } from '../types/editor'
 import type { LevelData } from '../types/level'
-import type { MapSlotFile } from '../types/mapFile'
+import type { FilledMapSlotFile, MapSlotFile } from '../types/mapFile'
+import { PLAYABLE_AREA_LABEL, RUNTIME_BOARD_HEIGHT, RUNTIME_BOARD_WIDTH, createRuntimeBorderWalls } from '../utils/boardGeometry'
 
-function createPublishedMap(slot: number, overrides: Partial<EditableLevelData> = {}): MapSlotFile {
+function createPublishedMap(slot: number, overrides: Partial<EditableLevelData> = {}): FilledMapSlotFile {
   return buildMapSlotFileFromEditableLevel({
     ...createEmptyEditableLevel(slot),
     playerSpawn: { x: 1, y: 1 },
@@ -60,7 +61,7 @@ describe('levelRepository', () => {
     vi.restoreAllMocks()
   })
 
-  it('builds authored level data from the editor-friendly 10x10 layout', () => {
+  it('builds canonical 12x12 runtime level data from the editor-friendly 10x10 layout', () => {
     const level = buildLevelFromEditableLevel({
       slot: 2,
       name: 'Ice Cavern 02',
@@ -72,8 +73,8 @@ describe('levelRepository', () => {
       enemies: [{ x: 7, y: 1 }]
     })
 
-    expect(level.width).toBe(AUTHORED_BOARD_SIZE)
-    expect(level.height).toBe(AUTHORED_BOARD_SIZE)
+    expect(level.width).toBe(RUNTIME_BOARD_WIDTH)
+    expect(level.height).toBe(RUNTIME_BOARD_HEIGHT)
     expect(level.playerSpawn).toEqual({ x: 2, y: 3 })
     expect(level.goals[0]).toEqual({ x: 9, y: 10 })
     expect(level.blocks[0]).toEqual({ x: 4, y: 5 })
@@ -83,19 +84,19 @@ describe('levelRepository', () => {
     expect(level.walls).toContainEqual({ x: 11, y: 11 })
   })
 
-  it('round-trips authored level data back into editor coordinates', () => {
+  it('round-trips canonical runtime level data back into editor coordinates', () => {
     const authoredLevel: LevelData = {
       name: 'Round Trip',
       tileSize: 64,
-      width: 12,
-      height: 12,
+      width: RUNTIME_BOARD_WIDTH,
+      height: RUNTIME_BOARD_HEIGHT,
       par: 1,
       objective: 'Test',
       playerSpawn: { x: 5, y: 6 },
       blocks: [{ x: 3, y: 4 }],
       enemies: [{ type: 'basic', x: 7, y: 2 }],
       goals: [{ x: 10, y: 9 }],
-      walls: [{ x: 0, y: 0 }, { x: 11, y: 11 }, { x: 6, y: 7 }]
+      walls: [...createRuntimeBorderWalls(), { x: 6, y: 7 }]
     }
 
     const editable = editableLevelFromLevel(4, authoredLevel)
@@ -144,6 +145,32 @@ describe('levelRepository', () => {
     const invalidJsonResult = parseMapSlotFileText('{ not-json }')
     expect(invalidJsonResult.value).toBeUndefined()
     expect(invalidJsonResult.errors).toEqual(['The uploaded file is not valid JSON.'])
+  })
+
+  it('enforces the canonical runtime geometry on published slot files', () => {
+    const baseFile = createPublishedMap(8)
+
+    const wrongSizeResult = validateMapSlotFileData({
+      ...baseFile,
+      level: {
+        ...baseFile.level,
+        width: 11
+      }
+    })
+    expect(wrongSizeResult.value).toBeUndefined()
+    expect(wrongSizeResult.errors).toContain(`level.width must be ${RUNTIME_BOARD_WIDTH}.`)
+
+    const borderSpawnResult = validateMapSlotFileData({
+      ...baseFile,
+      level: {
+        ...baseFile.level,
+        playerSpawn: { x: 0, y: 1 }
+      }
+    })
+    expect(borderSpawnResult.value).toBeUndefined()
+    expect(borderSpawnResult.errors).toContain(
+      `level.playerSpawn must stay inside the ${PLAYABLE_AREA_LABEL} playable runtime interior.`
+    )
   })
 
   it('loads published slots, lists non-empty maps, and finds the next available campaign slot', async () => {
@@ -217,5 +244,21 @@ describe('levelRepository', () => {
       ...emptyMap,
       exit: { x: 8, y: 8 }
     })).toEqual(['Add one player start position before saving.'])
+  })
+
+  it('keeps the published map catalog aligned to the canonical geometry contract', async () => {
+    for (let slot = 1; slot <= 99; slot += 1) {
+      const fileName = `map${String(slot).padStart(2, '0')}.json`
+      const fileUrl = new URL(`../../../public/maps/${fileName}`, import.meta.url)
+      const parsed = parseMapSlotFileText(await readFile(fileUrl, 'utf8'))
+
+      expect(parsed.errors).toEqual([])
+      expect(parsed.value?.slot).toBe(slot)
+
+      if (parsed.value && !parsed.value.empty) {
+        expect(parsed.value.level.width).toBe(RUNTIME_BOARD_WIDTH)
+        expect(parsed.value.level.height).toBe(RUNTIME_BOARD_HEIGHT)
+      }
+    }
   })
 })

@@ -7,6 +7,7 @@ import { Enemy } from '../entities/Enemy'
 import { Player } from '../entities/Player'
 import { InputController } from '../systems/input/InputController'
 import type { Direction, LevelData } from '../types/level'
+import { RUNTIME_BOARD_HEIGHT, RUNTIME_BOARD_LABEL, RUNTIME_BOARD_WIDTH, hasCanonicalRuntimeBoardSize } from '../utils/boardGeometry'
 import { addPoints, directionVectors, samePoint } from '../utils/grid'
 import { getBoardViewportLayout } from '../utils/layout'
 
@@ -28,7 +29,7 @@ const PLAYER_CAUGHT_ANIMATION_MS = 700
 
 /**
  * Thin Phaser runtime scene responsible for:
- * - building the authored board visuals
+ * - building the canonical 12x12 runtime board visuals
  * - sampling normalized input
  * - advancing the pure `StageState` simulation
  * - fitting and centering the board inside the current browser viewport
@@ -158,8 +159,8 @@ export class GameScene extends Phaser.Scene {
       0.12
     )
 
-    for (let y = 0; y < this.level.height; y += 1) {
-      for (let x = 0; x < this.level.width; x += 1) {
+    for (let y = 0; y < RUNTIME_BOARD_HEIGHT; y += 1) {
+      for (let x = 0; x < RUNTIME_BOARD_WIDTH; x += 1) {
         const isWall = this.level.walls?.some((wall) => wall.x === x && wall.y === y)
         const fill = isWall ? 0x334155 : (x + y) % 2 === 0 ? 0x16243a : 0x122036
         const tile = this.add.rectangle(
@@ -276,7 +277,7 @@ export class GameScene extends Phaser.Scene {
       enemiesRemaining: this.state.enemies.filter((enemy) => enemy.alive).length,
       objective: this.level.objective,
       status,
-      help: 'Desktop: hold arrows/WASD to move or push, Space + direction launches a block, left click steers, right click pushes. Touch: swipe to move or push, tap an adjacent block to push, forceful tap launches.'
+      help: 'Desktop: hold arrows/WASD to move or auto-push, Space + direction launches a block, left click steers, right click pushes. Touch: swipe to move or push, tap an adjacent block to push, forceful tap launches.'
     }
 
     this.game.events.emit('ui:update', payload)
@@ -389,11 +390,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getBoardPixelWidth(): number {
-    return this.level.width * this.level.tileSize
+    return RUNTIME_BOARD_WIDTH * this.level.tileSize
   }
 
   private getBoardPixelHeight(): number {
-    return this.level.height * this.level.tileSize
+    return RUNTIME_BOARD_HEIGHT * this.level.tileSize
   }
 
   private getBoardCenterX(): number {
@@ -416,6 +417,9 @@ export class GameScene extends Phaser.Scene {
       const resolved = await this.resolveLevel(data.levelSlot ?? 1)
       this.levelSlot = resolved.slot
       this.level = resolved.level
+      if (!hasCanonicalRuntimeBoardSize(this.level.width, this.level.height)) {
+        throw new Error(`Loaded level must use the canonical ${RUNTIME_BOARD_LABEL} runtime board.`)
+      }
       this.state = createStageState(this.level)
       this.inputController = new InputController(this, this.level.tileSize)
 

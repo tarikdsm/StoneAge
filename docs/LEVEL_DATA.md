@@ -8,7 +8,7 @@ simulation. They define layout and metadata, not gameplay code.
 The project now uses three level-facing shapes:
 
 - `LevelData`
-  Runtime/authored shape consumed by gameplay scenes and the pure core.
+  Runtime shape consumed by gameplay scenes and the pure core.
 - `EditableLevelData`
   Map-editor shape used for authoring in a 10x10 playable area.
 - `MapSlotFile`
@@ -27,7 +27,7 @@ Fields:
 - `tileSize`
   Render tile size in pixels.
 - `width`, `height`
-  Total authored board size in tiles.
+  Total runtime board size in tiles.
 - `par`
   Advisory balancing metadata.
 - `objective`
@@ -96,6 +96,12 @@ Fields:
 
 ## Board sizing semantics
 
+Canonical geometry:
+
+- editable playable area: **10 x 10**
+- runtime board: **12 x 12**
+- fixed runtime border: **1 tile** on each side
+
 ### Editor view
 
 - always edits a **10x10 playable area**
@@ -104,7 +110,7 @@ Fields:
 ### Runtime view
 
 - the playable 10x10 area is wrapped in a 1-tile wall border
-- total authored runtime board becomes **12x12**
+- total runtime board becomes **12x12**
 
 So the editor and runtime represent the same playable map in two different but
 compatible coordinate spaces.
@@ -117,8 +123,8 @@ The level repository performs conversion between the two spaces:
 - editor point `(9, 9)` becomes runtime point `(10, 10)`
 - runtime border walls stay outside the editable area
 
-This keeps the editor simpler while preserving the runtime's existing board
-rules and border-wall assumptions.
+This keeps the editor simpler while preserving the runtime's fixed-border
+geometry contract.
 
 ## Published slot catalog
 
@@ -156,6 +162,8 @@ Before a map file is accepted for gameplay or publication:
 - Map 01 may not be empty
 - non-empty slots must include valid `LevelData`
 - runtime board size must stay `12 x 12`
+- Player, Exit, Blocks, and Enemies must stay inside the runtime interior that
+  corresponds to the editor's `10 x 10` playable area
 - the full border wall ring must exist
 - positions must stay in-bounds
 - duplicate positions are rejected

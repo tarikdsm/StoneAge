@@ -62,15 +62,15 @@ export function getBoardViewportLayout(
  */
 export function getHudMetrics(viewportWidth: number, viewportHeight: number): HudMetrics {
   const narrow = viewportWidth < 720
-  const topBandHeight = viewportHeight * 0.1
-  const bottomBandHeight = viewportHeight * (narrow ? 0.12 : 0.1)
+  const topBandHeight = viewportHeight * (narrow ? 0.17 : 0.1)
+  const bottomBandHeight = viewportHeight * (narrow ? 0.14 : 0.1)
 
   return {
     narrow,
     topBandHeight,
     bottomBandHeight,
-    topPanelHeight: clamp(topBandHeight * 0.72, 46, 70),
-    bottomPanelHeight: clamp(bottomBandHeight * 0.78, 52, narrow ? 92 : 76),
+    topPanelHeight: clamp(topBandHeight * 0.84, narrow ? 96 : 46, narrow ? 132 : 70),
+    bottomPanelHeight: clamp(bottomBandHeight * 0.82, narrow ? 82 : 52, narrow ? 124 : 76),
     panelPadding: clamp(Math.min(viewportWidth, viewportHeight) * 0.018, 10, 18)
   }
 }

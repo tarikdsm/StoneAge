@@ -4,10 +4,10 @@ import type { GridPoint } from './level'
 export type EditorTool = 'player' | 'block' | 'column' | 'enemy' | 'exit' | 'erase'
 
 /**
- * Authoring-friendly editor shape for the 10x10 playable area.
+ * Authoring-friendly editor shape for the canonical 10x10 playable area.
  *
  * Editor coordinates are expressed inside the open playable area rather than
- * the full authored board with border walls.
+ * the full runtime board with border walls.
  */
 export interface EditableLevelData {
   slot: number

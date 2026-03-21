@@ -7,7 +7,8 @@ The project combines:
 
 - a pure real-time gameplay core
 - a browser-driven campaign that always starts at Map 01
-- a built-in 10x10 map generator/editor
+- a built-in map generator/editor for a canonical 10x10 playable area
+- a fixed 12x12 runtime board with a non-playable outer wall ring
 - canonical published map slots stored as JSON under `public/maps/`
 - static hosting on GitHub Pages, with optional in-browser publishing through
   the GitHub Contents API
@@ -24,7 +25,7 @@ The project combines:
 - Menu hub with `Play` and `Generate Maps`
 - Always-available in-game `Menu` button
 - Defeat animation where the player is visibly devoured by the catching NPC
-- Built-in 10x10 map generator for slots 01-99
+- Built-in 10x10 playable-area map generator for slots 01-99
 - Upload and download for map JSON files
 - Strict JSON validation before uploaded or published maps are accepted
 - Responsive board fitting that keeps the entire board centered and visible
@@ -45,7 +46,7 @@ The project combines:
 
 ### Generate Maps
 
-- Opens the built-in 10x10 map generator
+- Opens the built-in map generator for the canonical 10x10 playable area
 - Loads the currently published map catalog
 - Allows **Map 01** to be modified but never cleared
 - Allows **Maps 02-99** to be created, overwritten, uploaded, downloaded, or
@@ -96,6 +97,15 @@ The project combines:
 
 ## Architecture summary
 
+### Canonical geometry
+
+- Editable/authored playable area: **10 x 10**
+- Runtime board consumed by gameplay/rendering: **12 x 12**
+- Runtime board border: **1 tile thick on every side**
+- Player, Exit, Blocks, Columns, and NPC spawns all live inside the 10x10
+  interior, while the fixed outer wall ring stays non-playable
+- Shared geometry helpers live in `src/game/utils/boardGeometry.ts`
+
 ### Scenes
 
 - **BootScene**
@@ -106,7 +116,8 @@ The project combines:
   Loads map slots through the level repository, advances the pure simulation,
   and syncs render actors.
 - **MapEditorScene**
-  Edits 10x10 playable layouts and publishes them as map-slot JSON files.
+  Edits canonical 10x10 playable layouts and publishes them as 12x12 runtime
+  map-slot JSON files.
 - **UIScene**
   Renders HUD information for gameplay.
 
@@ -119,12 +130,15 @@ The project combines:
   publication.
 - **`src/game/systems/input/InputController.ts`**
   Normalized keyboard, mouse, and touch intent.
+- **`src/game/utils/boardGeometry.ts`**
+  Canonical board dimensions, fixed-border helpers, and editor/runtime
+  coordinate conversion.
 - **`src/game/utils/layout.ts`**
   Pure responsive layout helpers.
 - **`src/game/types/level.ts`**
   Runtime level schema.
 - **`src/game/types/editor.ts`**
-  Editor-facing 10x10 authoring schema.
+  Editor-facing 10x10 playable-area authoring schema.
 - **`src/game/types/mapFile.ts`**
   Canonical slot-file JSON schema used by `public/maps/mapNN.json`.
 
@@ -173,6 +187,19 @@ npm run lint
 npm run build
 ```
 
+## LLM backup
+
+```bash
+npm run backup:llm
+```
+
+- Creates a local `.rar` under `Backup_RAR/`
+- Uses a timestamped file name like `StoneAge_LLM_Backup_21032026_1234.rar`
+- Includes the analyzable project source, docs, configs, published map JSON, and
+  text-based assets
+- Excludes build output, dependencies, git metadata, and the backup directory
+- `Backup_RAR/` is local-only and ignored by git
+
 ## Production build
 
 ```bash
@@ -215,7 +242,7 @@ Uploaded and published map files are checked before they are accepted:
 - exact runtime level fields only
 - slot must stay between `01` and `99`
 - `map01` cannot be empty
-- board size must remain `12 x 12`
+- board size must remain `12 x 12`, with a fixed `10 x 10` playable interior
 - the border wall ring must be complete
 - Player, Exit, Blocks, Enemies, and Walls must stay in-bounds
 - illegal overlaps are rejected

@@ -1,6 +1,20 @@
 import type { EditableLevelData, LevelSummary } from '../types/editor'
 import type { EnemyDefinition, GridPoint, LevelData } from '../types/level'
 import type { FilledMapSlotFile, MapSlotFile } from '../types/mapFile'
+import {
+  PLAYABLE_AREA_LABEL,
+  RUNTIME_BOARD_HEIGHT,
+  RUNTIME_BOARD_LABEL,
+  RUNTIME_BOARD_WIDTH,
+  REQUIRED_RUNTIME_BORDER_WALL_KEYS,
+  createRuntimeBorderWalls,
+  isInsidePlayableArea,
+  isInsideRuntimeBoard,
+  isInsideRuntimePlayableArea,
+  isRuntimeBorderWall,
+  toPlayableAreaPoint,
+  toRuntimeBoardPoint
+} from '../utils/boardGeometry'
 
 /**
  * Canonical level repository for campaign slots and editor publication.
@@ -8,7 +22,7 @@ import type { FilledMapSlotFile, MapSlotFile } from '../types/mapFile'
  * Responsibilities:
  * - load the 99 static map-slot files served from `public/maps`
  * - validate uploaded/downloaded slot-file JSON before it touches gameplay
- * - convert between editor-friendly 10x10 layouts and runtime `LevelData`
+ * - convert between editor-friendly 10x10 layouts and canonical 12x12 runtime `LevelData`
  * - write updated slot files locally during `localhost` development
  * - publish updated slot files back to the GitHub repository when authorized
  *
@@ -17,9 +31,6 @@ import type { FilledMapSlotFile, MapSlotFile } from '../types/mapFile'
  */
 export const MAP_MIN_SLOT = 1
 export const MAP_MAX_SLOT = 99
-export const PLAYABLE_GRID_SIZE = 10
-export const BOARD_BORDER_SIZE = 1
-export const AUTHORED_BOARD_SIZE = PLAYABLE_GRID_SIZE + BOARD_BORDER_SIZE * 2
 export const DEFAULT_TILE_SIZE = 64
 export const MAP_FILE_TYPE = 'stoneage-map-slot'
 export const MAP_FILE_VERSION = 1
@@ -116,59 +127,6 @@ function defaultObjective(): string {
   return 'Crush every raider with the blocks, then reach the exit.'
 }
 
-function createBorderWalls(): GridPoint[] {
-  const walls: GridPoint[] = []
-
-  for (let x = 0; x < AUTHORED_BOARD_SIZE; x += 1) {
-    walls.push({ x, y: 0 })
-    walls.push({ x, y: AUTHORED_BOARD_SIZE - 1 })
-  }
-
-  for (let y = 1; y < AUTHORED_BOARD_SIZE - 1; y += 1) {
-    walls.push({ x: 0, y })
-    walls.push({ x: AUTHORED_BOARD_SIZE - 1, y })
-  }
-
-  return walls
-}
-
-const requiredBorderWalls = new Set(createBorderWalls().map(pointKey))
-
-function isBorderWall(point: GridPoint): boolean {
-  return point.x === 0
-    || point.y === 0
-    || point.x === AUTHORED_BOARD_SIZE - 1
-    || point.y === AUTHORED_BOARD_SIZE - 1
-}
-
-function toPlayablePoint(point: GridPoint): GridPoint {
-  return {
-    x: point.x - BOARD_BORDER_SIZE,
-    y: point.y - BOARD_BORDER_SIZE
-  }
-}
-
-function toBoardPoint(point: GridPoint): GridPoint {
-  return {
-    x: point.x + BOARD_BORDER_SIZE,
-    y: point.y + BOARD_BORDER_SIZE
-  }
-}
-
-function isInsidePlayableGrid(point: GridPoint): boolean {
-  return point.x >= 0
-    && point.y >= 0
-    && point.x < PLAYABLE_GRID_SIZE
-    && point.y < PLAYABLE_GRID_SIZE
-}
-
-function isInsideBoard(point: GridPoint): boolean {
-  return point.x >= 0
-    && point.y >= 0
-    && point.x < AUTHORED_BOARD_SIZE
-    && point.y < AUTHORED_BOARD_SIZE
-}
-
 function parseInteger(value: unknown, label: string, min: number, max: number, errors: string[]): number | undefined {
   if (!Number.isInteger(value)) {
     errors.push(`${label} must be an integer.`)
@@ -177,7 +135,9 @@ function parseInteger(value: unknown, label: string, min: number, max: number, e
 
   const safeValue = value as number
   if (safeValue < min || safeValue > max) {
-    errors.push(`${label} must stay between ${min} and ${max}.`)
+    errors.push(min === max
+      ? `${label} must be ${min}.`
+      : `${label} must stay between ${min} and ${max}.`)
     return undefined
   }
 
@@ -210,8 +170,8 @@ function parseGridPoint(value: unknown, label: string, errors: string[]): GridPo
     return undefined
   }
 
-  const x = parseInteger(value.x, `${label}.x`, 0, AUTHORED_BOARD_SIZE - 1, errors)
-  const y = parseInteger(value.y, `${label}.y`, 0, AUTHORED_BOARD_SIZE - 1, errors)
+  const x = parseInteger(value.x, `${label}.x`, 0, RUNTIME_BOARD_WIDTH - 1, errors)
+  const y = parseInteger(value.y, `${label}.y`, 0, RUNTIME_BOARD_HEIGHT - 1, errors)
   if (x === undefined || y === undefined) {
     return undefined
   }
@@ -265,8 +225,8 @@ function parseEnemyDefinitions(value: unknown, errors: string[]): EnemyDefinitio
       continue
     }
 
-    const x = parseInteger(item.x, `level.enemies[${index}].x`, 0, AUTHORED_BOARD_SIZE - 1, errors)
-    const y = parseInteger(item.y, `level.enemies[${index}].y`, 0, AUTHORED_BOARD_SIZE - 1, errors)
+    const x = parseInteger(item.x, `level.enemies[${index}].x`, 0, RUNTIME_BOARD_WIDTH - 1, errors)
+    const y = parseInteger(item.y, `level.enemies[${index}].y`, 0, RUNTIME_BOARD_HEIGHT - 1, errors)
     if (x === undefined || y === undefined) {
       continue
     }
@@ -348,8 +308,8 @@ function validateLevelDataRecord(value: unknown): ValidationResult<LevelData> {
   const name = parseString(value.name, 'level.name', 80, errors)
   const objective = parseString(value.objective, 'level.objective', 240, errors)
   const tileSize = parseInteger(value.tileSize, 'level.tileSize', DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE, errors)
-  const width = parseInteger(value.width, 'level.width', AUTHORED_BOARD_SIZE, AUTHORED_BOARD_SIZE, errors)
-  const height = parseInteger(value.height, 'level.height', AUTHORED_BOARD_SIZE, AUTHORED_BOARD_SIZE, errors)
+  const width = parseInteger(value.width, 'level.width', RUNTIME_BOARD_WIDTH, RUNTIME_BOARD_WIDTH, errors)
+  const height = parseInteger(value.height, 'level.height', RUNTIME_BOARD_HEIGHT, RUNTIME_BOARD_HEIGHT, errors)
   const par = parseInteger(value.par, 'level.par', 1, 999, errors)
   const playerSpawn = parseGridPoint(value.playerSpawn, 'level.playerSpawn', errors)
   const blocks = parseGridPointList(value.blocks, 'level.blocks', errors)
@@ -363,7 +323,7 @@ function validateLevelDataRecord(value: unknown): ValidationResult<LevelData> {
 
   if (walls) {
     const wallKeys = new Set(walls.map(pointKey))
-    for (const borderKey of requiredBorderWalls) {
+    for (const borderKey of REQUIRED_RUNTIME_BORDER_WALL_KEYS) {
       if (!wallKeys.has(borderKey)) {
         errors.push('level.walls must contain the full border wall ring.')
         break
@@ -371,18 +331,18 @@ function validateLevelDataRecord(value: unknown): ValidationResult<LevelData> {
     }
   }
 
-  if (playerSpawn && !isInsideBoard(playerSpawn)) {
-    errors.push('level.playerSpawn must stay inside the authored board.')
+  if (playerSpawn && !isInsideRuntimePlayableArea(playerSpawn)) {
+    errors.push(`level.playerSpawn must stay inside the ${PLAYABLE_AREA_LABEL} playable runtime interior.`)
   }
 
-  for (const list of [blocks, goals, walls]) {
-    if (!list) {
+  for (const pointList of [blocks, goals]) {
+    if (!pointList) {
       continue
     }
 
-    for (const point of list) {
-      if (!isInsideBoard(point)) {
-        errors.push('All level points must stay inside the authored board.')
+    for (const point of pointList) {
+      if (!isInsideRuntimePlayableArea(point)) {
+        errors.push(`All non-wall level points must stay inside the ${PLAYABLE_AREA_LABEL} playable runtime interior.`)
         break
       }
     }
@@ -390,8 +350,17 @@ function validateLevelDataRecord(value: unknown): ValidationResult<LevelData> {
 
   if (enemies) {
     for (const enemy of enemies) {
-      if (!isInsideBoard(enemy)) {
-        errors.push('All level enemies must stay inside the authored board.')
+      if (!isInsideRuntimePlayableArea(enemy)) {
+        errors.push(`All level enemies must stay inside the ${PLAYABLE_AREA_LABEL} playable runtime interior.`)
+        break
+      }
+    }
+  }
+
+  if (walls) {
+    for (const wall of walls) {
+      if (!isInsideRuntimeBoard(wall)) {
+        errors.push(`All level walls must stay inside the ${RUNTIME_BOARD_LABEL} runtime board.`)
         break
       }
     }
@@ -545,11 +514,11 @@ export function editableLevelFromLevel(slot: number, level: LevelData): Editable
     slot: sanitizeSlot(slot),
     name: level.name,
     objective: level.objective,
-    playerSpawn: toPlayablePoint(level.playerSpawn),
-    exit: level.goals[0] ? toPlayablePoint(level.goals[0]) : undefined,
-    blocks: level.blocks.map(toPlayablePoint),
-    columns: (level.walls ?? []).filter((wall) => !isBorderWall(wall)).map(toPlayablePoint),
-    enemies: level.enemies.map(toPlayablePoint)
+    playerSpawn: toPlayableAreaPoint(level.playerSpawn),
+    exit: level.goals[0] ? toPlayableAreaPoint(level.goals[0]) : undefined,
+    blocks: level.blocks.map(toPlayableAreaPoint),
+    columns: (level.walls ?? []).filter((wall) => !isRuntimeBorderWall(wall)).map(toPlayableAreaPoint),
+    enemies: level.enemies.map(toPlayableAreaPoint)
   }
 }
 
@@ -577,18 +546,18 @@ export function buildLevelFromEditableLevel(editable: EditableLevelData): LevelD
   return {
     name: editable.name.trim() || formatLevelName(editable.slot),
     tileSize: DEFAULT_TILE_SIZE,
-    width: AUTHORED_BOARD_SIZE,
-    height: AUTHORED_BOARD_SIZE,
+    width: RUNTIME_BOARD_WIDTH,
+    height: RUNTIME_BOARD_HEIGHT,
     par: Math.max(1, Math.ceil((editable.enemies.length + editable.blocks.length) / 3)),
     objective: editable.objective.trim() || defaultObjective(),
-    playerSpawn: toBoardPoint(editable.playerSpawn as GridPoint),
-    blocks: editable.blocks.map(toBoardPoint),
+    playerSpawn: toRuntimeBoardPoint(editable.playerSpawn as GridPoint),
+    blocks: editable.blocks.map(toRuntimeBoardPoint),
     enemies: editable.enemies.map((enemy) => ({
       type: 'basic',
-      ...toBoardPoint(enemy)
+      ...toRuntimeBoardPoint(enemy)
     })) as EnemyDefinition[],
-    goals: [toBoardPoint(editable.exit as GridPoint)],
-    walls: [...createBorderWalls(), ...editable.columns.map(toBoardPoint)]
+    goals: [toRuntimeBoardPoint(editable.exit as GridPoint)],
+    walls: [...createRuntimeBorderWalls(), ...editable.columns.map(toRuntimeBoardPoint)]
   }
 }
 
@@ -622,19 +591,19 @@ export function validateEditableLevel(editable: EditableLevelData): string[] {
     errors.push('Add one exit before saving.')
   }
 
-  if (editable.playerSpawn && !isInsidePlayableGrid(editable.playerSpawn)) {
-    errors.push('Player start must stay inside the 10x10 playable area.')
+  if (editable.playerSpawn && !isInsidePlayableArea(editable.playerSpawn)) {
+    errors.push(`Player start must stay inside the ${PLAYABLE_AREA_LABEL} playable area.`)
   }
 
-  if (editable.exit && !isInsidePlayableGrid(editable.exit)) {
-    errors.push('Exit must stay inside the 10x10 playable area.')
+  if (editable.exit && !isInsidePlayableArea(editable.exit)) {
+    errors.push(`Exit must stay inside the ${PLAYABLE_AREA_LABEL} playable area.`)
   }
 
   for (const list of [editable.blocks, editable.columns, editable.enemies]) {
     const seen = new Set<string>()
     for (const point of list) {
-      if (!isInsidePlayableGrid(point)) {
-        errors.push('All placed tiles must stay inside the 10x10 playable area.')
+      if (!isInsidePlayableArea(point)) {
+        errors.push(`All placed tiles must stay inside the ${PLAYABLE_AREA_LABEL} playable area.`)
         break
       }
 

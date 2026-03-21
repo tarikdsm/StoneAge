@@ -18,8 +18,9 @@ export interface EnemyDefinition extends GridPoint {
  * Authoritative level schema for JSON-authored stage data.
  *
  * Runtime assumptions:
- * - `width` and `height` define the total legal board bounds.
- * - editor-authored 10x10 playable maps are converted into this total-board
+ * - `width` and `height` define the total legal runtime board bounds.
+ * - the canonical runtime board is `12 x 12`, including a fixed outer border.
+ * - editor-authored `10 x 10` playable maps are converted into this total-board
  *   shape by adding a border wall ring around the playable area.
  * - `playerSpawn`, `blocks`, `enemies`, `goals`, and `walls` are all expressed
  *   in grid coordinates inside that total board.

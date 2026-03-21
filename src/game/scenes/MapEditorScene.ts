@@ -2,7 +2,6 @@ import Phaser from 'phaser'
 import {
   MAP_MAX_SLOT,
   MAX_MAP_FILE_BYTES,
-  PLAYABLE_GRID_SIZE,
   buildMapSlotFileFromEditableLevel,
   clearMapSlot,
   createEmptyEditableLevel,
@@ -26,6 +25,7 @@ import type { EditableLevelData, EditorTool, LevelSummary } from '../types/edito
 import type { MapSlotFile } from '../types/mapFile'
 import type { GridPoint } from '../types/level'
 import { samePoint } from '../utils/grid'
+import { PLAYABLE_AREA_HEIGHT, PLAYABLE_AREA_LABEL, PLAYABLE_AREA_WIDTH } from '../utils/boardGeometry'
 import { clamp } from '../utils/layout'
 
 interface EditorButton {
@@ -51,7 +51,7 @@ const TOOL_LABELS: Record<EditorTool, string> = {
 const GITHUB_TOKEN_SESSION_KEY = 'stoneage:github-token:session'
 
 /**
- * Browser-side map editor scene for 10x10 playable layouts.
+ * Browser-side map editor scene for the canonical 10x10 playable layout.
  *
  * The editor now treats `public/maps/mapNN.json` as the canonical published
  * source of truth. Uploads, saves, deletes, and downloads all operate on that
@@ -170,7 +170,7 @@ export class MapEditorScene extends Phaser.Scene {
       fontFamily: 'Arial',
       color: '#facc15',
       align: 'center'
-    }).setOrigin(0.5, 0)
+    }).setOrigin(0.5, 0).setDepth(5)
 
     this.toolHintText = this.add.text(0, 0, '', {
       fontFamily: 'Arial',
@@ -185,7 +185,7 @@ export class MapEditorScene extends Phaser.Scene {
     }).setOrigin(0.5)
 
     this.backButton = this.createButton('Back', () => this.scene.start('MenuScene'))
-    this.newButton = this.createButton('New Map', () => { void this.resetToNewMap('New blank 10x10 map ready.') })
+    this.newButton = this.createButton('New Map', () => { void this.resetToNewMap(`New blank ${PLAYABLE_AREA_LABEL} map ready.`) })
     this.previousPageButton = this.createButton('Prev', () => this.changePage(-1))
     this.nextPageButton = this.createButton('Next', () => this.changePage(1))
     this.saveButton = this.createButton('Save Map', () => { void this.saveCurrentMap() })
@@ -223,6 +223,11 @@ export class MapEditorScene extends Phaser.Scene {
   }
 
   private layoutScene(width: number, height: number): void {
+    if (width < 700) {
+      this.layoutStackedScene(width, height)
+      return
+    }
+
     const headerHeight = clamp(height * 0.11, 72, 92)
     const padding = clamp(Math.min(width, height) * 0.018, 10, 22)
     const narrow = width < 900
@@ -257,10 +262,10 @@ export class MapEditorScene extends Phaser.Scene {
     const rightSectionTop = contentTop + 44
     const hintSectionHeight = clamp(height * 0.12, 74, 96)
     const rightHintDividerY = rightSectionTop + hintSectionHeight
-    const actionSectionHeight = 278
+    const actionSectionHeight = 250
     const actionSectionTop = contentTop + contentHeight - actionSectionHeight
     const toolAreaTop = rightHintDividerY + 18
-    const toolAreaBottom = actionSectionTop - 16
+    const toolAreaBottom = actionSectionTop - 24
     const toolGap = 8
     const toolButtonHeight = clamp(
       (toolAreaBottom - toolAreaTop - toolGap * (TOOL_ORDER.length - 1)) / TOOL_ORDER.length,
@@ -381,13 +386,179 @@ export class MapEditorScene extends Phaser.Scene {
       x: boardLeft,
       y: boardTop
     }
-    this.cellSize = boardSide / PLAYABLE_GRID_SIZE
+    this.cellSize = Math.min(boardSide / PLAYABLE_AREA_WIDTH, boardSide / PLAYABLE_AREA_HEIGHT)
 
-    for (let y = 0; y < PLAYABLE_GRID_SIZE; y += 1) {
-      for (let x = 0; x < PLAYABLE_GRID_SIZE; x += 1) {
+    for (let y = 0; y < PLAYABLE_AREA_HEIGHT; y += 1) {
+      for (let x = 0; x < PLAYABLE_AREA_WIDTH; x += 1) {
         this.gridCells[y]?.[x]
           ?.setPosition(this.gridOrigin.x + x * this.cellSize, this.gridOrigin.y + y * this.cellSize)
           .setSize(this.cellSize - 2, this.cellSize - 2)
+      }
+    }
+
+    this.renderEditor()
+  }
+
+  private layoutStackedScene(width: number, height: number): void {
+    const headerHeight = clamp(height * 0.145, 90, 120)
+    const padding = clamp(Math.min(width, height) * 0.02, 10, 16)
+    const buttonHeight = 36
+    const smallButtonHeight = 30
+    const listButtonGap = 8
+    const dividerInset = 12
+    const dividerHeight = 2
+    const boardSide = clamp(Math.min(width - padding * 2, height * 0.28), 220, 260)
+    const boardLeft = (width - boardSide) / 2
+    const boardTop = headerHeight + padding
+    const panelsTop = boardTop + boardSide + padding
+    const panelWidth = Math.max(164, (width - padding * 3) / 2)
+    const panelHeight = Math.max(280, height - panelsTop - padding)
+    const leftPanelX = padding
+    const rightPanelX = padding * 2 + panelWidth
+    const panelInnerWidth = panelWidth - 28
+    const dividerWidth = panelWidth - dividerInset * 2
+    const leftSectionTop = panelsTop + 16
+    const leftTitleDividerY = panelsTop + 102
+    const leftCountsTop = leftTitleDividerY + 12
+    const leftCountsDividerY = leftCountsTop + 82
+    const leftButtonTop = leftCountsDividerY + 12
+    const leftMapsDividerY = leftButtonTop + buttonHeight + 12
+    const pageButtonY = panelsTop + panelHeight - 46
+    const paginationY = pageButtonY - 18
+    const mapListTitleY = leftMapsDividerY + 12
+    const mapListTop = mapListTitleY + 24
+    const listAvailableHeight = Math.max(72, paginationY - 12 - mapListTop)
+    const rightSectionTop = panelsTop + 18
+    const rightHintDividerY = rightSectionTop + 102
+    const toolGridTop = rightHintDividerY + 12
+    const toolGap = 6
+    const toolButtonWidth = (panelInnerWidth - toolGap) / 2
+    const toolButtonHeight = 30
+    const toolRows = 3
+    const toolGridHeight = toolRows * toolButtonHeight + (toolRows - 1) * toolGap
+    const actionSectionTop = toolGridTop + toolGridHeight + 16
+    const actionDividerY = actionSectionTop
+    const slotTextY = actionDividerY + 10
+    const slotButtonY = slotTextY + 30
+    const actionButtonWidth = toolButtonWidth
+    const actionButtonHeight = 32
+    const saveRowY = slotButtonY + smallButtonHeight + 10
+    const secondRowY = saveRowY + actionButtonHeight + 8
+    const backButtonWidth = 72
+
+    this.listPageSize = Math.max(2, Math.floor(listAvailableHeight / (buttonHeight + listButtonGap)))
+    this.listPage = Math.min(this.listPage, Math.max(0, this.getPageCount() - 1))
+
+    this.background?.setSize(width, height)
+    this.headerPanel?.setSize(width, headerHeight)
+    this.leftPanel?.setPosition(leftPanelX, panelsTop).setSize(panelWidth, panelHeight)
+    this.rightPanel?.setPosition(rightPanelX, panelsTop).setSize(panelWidth, panelHeight)
+    this.boardFrame?.setPosition(boardLeft - padding * 0.35, boardTop - padding * 0.35).setSize(boardSide + padding * 0.7, boardSide + padding * 0.7)
+    this.boardFill?.setPosition(boardLeft, boardTop).setSize(boardSide, boardSide)
+
+    this.titleText
+      ?.setPosition(width / 2 + 24, 14)
+      .setOrigin(0.5, 0)
+      .setFontSize(clamp(width * 0.055, 22, 30))
+
+    this.statusText
+      ?.setPosition(width / 2, headerHeight - 30)
+      .setOrigin(0.5, 0.5)
+      .setFontSize(12)
+      .setWordWrapWidth(width - padding * 2)
+
+    this.leftTitleText
+      ?.setPosition(leftPanelX + 14, mapListTitleY)
+      .setFontSize(12)
+
+    this.rightTitleText
+      ?.setPosition(rightPanelX + 14, panelsTop + 14)
+      .setFontSize(12)
+
+    this.editorTitleText
+      ?.setPosition(leftPanelX + 14, leftSectionTop)
+      .setOrigin(0, 0)
+      .setFontSize(10)
+      .setWordWrapWidth(panelInnerWidth)
+
+    this.countsText
+      ?.setPosition(leftPanelX + 14, leftCountsTop)
+      .setOrigin(0, 0)
+      .setFontSize(11)
+      .setWordWrapWidth(panelInnerWidth)
+
+    this.slotText
+      ?.setPosition(rightPanelX + panelWidth / 2, slotTextY)
+      .setFontSize(10)
+
+    this.toolHintText
+      ?.setPosition(rightPanelX + 14, rightSectionTop)
+      .setFontSize(10)
+      .setWordWrapWidth(panelInnerWidth)
+
+    this.paginationText
+      ?.setPosition(leftPanelX + panelWidth / 2, paginationY)
+      .setFontSize(10)
+      .setVisible(this.getPageCount() > 1)
+
+    this.leftTitleDivider
+      ?.setPosition(leftPanelX + dividerInset, leftTitleDividerY)
+      .setSize(dividerWidth, dividerHeight)
+
+    this.leftCountsDivider
+      ?.setPosition(leftPanelX + dividerInset, leftCountsDividerY)
+      .setSize(dividerWidth, dividerHeight)
+
+    this.leftMapsDivider
+      ?.setPosition(leftPanelX + dividerInset, leftMapsDividerY)
+      .setSize(dividerWidth, dividerHeight)
+
+    this.rightHintDivider
+      ?.setPosition(rightPanelX + dividerInset, rightHintDividerY)
+      .setSize(dividerWidth, dividerHeight)
+
+    this.rightActionDivider
+      ?.setPosition(rightPanelX + dividerInset, actionDividerY)
+      .setSize(dividerWidth, dividerHeight)
+
+    this.setButtonLayout(this.backButton, padding, 18, backButtonWidth, 34, 11)
+    this.setButtonLayout(this.newButton, leftPanelX + 14, leftButtonTop, panelInnerWidth, buttonHeight, 11)
+    this.setButtonLayout(this.previousPageButton, leftPanelX + 14, pageButtonY, (panelInnerWidth - 8) / 2, 32, 10)
+    this.setButtonLayout(this.nextPageButton, leftPanelX + 14 + (panelInnerWidth - 8) / 2 + 8, pageButtonY, (panelInnerWidth - 8) / 2, 32, 10)
+
+    this.rebuildMapButtons()
+    let mapButtonY = mapListTop
+    for (const button of this.mapButtons) {
+      this.setButtonLayout(button, leftPanelX + 14, mapButtonY, panelInnerWidth, buttonHeight, 10)
+      mapButtonY += buttonHeight + listButtonGap
+    }
+
+    TOOL_ORDER.forEach((tool, index) => {
+      const row = Math.floor(index / 2)
+      const column = index % 2
+      const buttonX = rightPanelX + 14 + column * (toolButtonWidth + toolGap)
+      const buttonY = toolGridTop + row * (toolButtonHeight + toolGap)
+      this.setButtonLayout(this.toolButtons.get(tool), buttonX, buttonY, toolButtonWidth, toolButtonHeight, 10)
+    })
+
+    this.setButtonLayout(this.slotMinusButton, rightPanelX + 14, slotButtonY, actionButtonWidth, smallButtonHeight, 16)
+    this.setButtonLayout(this.slotPlusButton, rightPanelX + 14 + actionButtonWidth + toolGap, slotButtonY, actionButtonWidth, smallButtonHeight, 16)
+    this.setButtonLayout(this.saveButton, rightPanelX + 14, saveRowY, actionButtonWidth, actionButtonHeight, 10)
+    this.setButtonLayout(this.deleteButton, rightPanelX + 14 + actionButtonWidth + toolGap, saveRowY, actionButtonWidth, actionButtonHeight, 10)
+    this.setButtonLayout(this.downloadButton, rightPanelX + 14, secondRowY, actionButtonWidth, actionButtonHeight, 10)
+    this.setButtonLayout(this.uploadButton, rightPanelX + 14 + actionButtonWidth + toolGap, secondRowY, actionButtonWidth, actionButtonHeight, 10)
+
+    this.gridOrigin = {
+      x: boardLeft,
+      y: boardTop
+    }
+    this.cellSize = Math.min(boardSide / PLAYABLE_AREA_WIDTH, boardSide / PLAYABLE_AREA_HEIGHT)
+
+    for (let y = 0; y < PLAYABLE_AREA_HEIGHT; y += 1) {
+      for (let x = 0; x < PLAYABLE_AREA_WIDTH; x += 1) {
+        this.gridCells[y]?.[x]
+          ?.setPosition(this.gridOrigin.x + x * this.cellSize, this.gridOrigin.y + y * this.cellSize)
+          .setSize(this.cellSize - 1.5, this.cellSize - 1.5)
       }
     }
 
@@ -398,9 +569,9 @@ export class MapEditorScene extends Phaser.Scene {
     this.markerLayer = this.add.container(0, 0)
     this.markerLayer.setDepth(2)
 
-    for (let y = 0; y < PLAYABLE_GRID_SIZE; y += 1) {
+    for (let y = 0; y < PLAYABLE_AREA_HEIGHT; y += 1) {
       const row: Phaser.GameObjects.Rectangle[] = []
-      for (let x = 0; x < PLAYABLE_GRID_SIZE; x += 1) {
+      for (let x = 0; x < PLAYABLE_AREA_WIDTH; x += 1) {
         const cell = this.add.rectangle(0, 0, 10, 10, 0x16243a, 1).setOrigin(0)
         cell.setStrokeStyle(1, 0x1e293b, 0.85)
         cell.setInteractive({ useHandCursor: true })
@@ -684,8 +855,8 @@ export class MapEditorScene extends Phaser.Scene {
       ].join('\n')
     )
 
-    for (let y = 0; y < PLAYABLE_GRID_SIZE; y += 1) {
-      for (let x = 0; x < PLAYABLE_GRID_SIZE; x += 1) {
+    for (let y = 0; y < PLAYABLE_AREA_HEIGHT; y += 1) {
+      for (let x = 0; x < PLAYABLE_AREA_WIDTH; x += 1) {
         const point = { x, y }
         const occupant = this.getOccupantType(point)
         const fill = occupant === 'column'

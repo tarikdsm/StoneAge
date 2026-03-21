@@ -149,7 +149,7 @@ These rules reduce accidental pushes while keeping touch play practical.
 
 Responsive browser layout does not change gameplay rules.
 
-- the entire authored board is auto-fitted into the browser viewport
+- the entire canonical 12x12 runtime board is auto-fitted into the browser viewport
 - the board remains centered
 - HUD layout adapts separately from the gameplay board
 - viewport size changes never change logical coordinates or game rules
@@ -161,7 +161,7 @@ The map generator changes authored content, not runtime rules.
 - generated maps still run through the same `StageState` core
 - generated maps still use the same movement, push, crush, and victory rules
 - the generator edits a 10x10 playable area that the runtime converts into the
-  authored level format with border walls
+  canonical 12x12 level format with border walls
 - the generator publishes those authored levels as `public/maps/mapNN.json`
 - the generator refuses to save maps without a Player start and an Exit
 - uploaded map JSON is validated before it can become part of the campaign
