@@ -236,6 +236,12 @@ describe('levelRepository', () => {
   })
 
   it('keeps the published map catalog aligned to the canonical geometry contract', async () => {
+    const layoutSignatures = new Set<string>()
+    const enemyCounts: number[] = []
+    const blockCounts: number[] = []
+    const columnCounts: number[] = []
+    const borderWallCount = createRuntimeBorderWalls().length
+
     for (let slot = 1; slot <= 99; slot += 1) {
       const fileName = `map${String(slot).padStart(2, '0')}.json`
       const fileUrl = new URL(`../../../public/maps/${fileName}`, import.meta.url)
@@ -243,12 +249,34 @@ describe('levelRepository', () => {
 
       expect(parsed.errors).toEqual([])
       expect(parsed.value?.slot).toBe(slot)
+      expect(parsed.value?.empty).toBe(false)
 
       if (parsed.value && !parsed.value.empty) {
         expect(parsed.value.level.width).toBe(RUNTIME_BOARD_WIDTH)
         expect(parsed.value.level.height).toBe(RUNTIME_BOARD_HEIGHT)
         expect(Object.prototype.hasOwnProperty.call(parsed.value.level, 'goals')).toBe(false)
+
+        const signature = JSON.stringify({
+          player: parsed.value.level.playerSpawn,
+          blocks: parsed.value.level.blocks,
+          enemies: parsed.value.level.enemies,
+          walls: parsed.value.level.walls
+        })
+        expect(layoutSignatures.has(signature)).toBe(false)
+        layoutSignatures.add(signature)
+
+        enemyCounts.push(parsed.value.level.enemies.length)
+        blockCounts.push(parsed.value.level.blocks.length)
+        columnCounts.push((parsed.value.level.walls?.length ?? 0) - borderWallCount)
       }
     }
+
+    expect(layoutSignatures.size).toBe(99)
+    expect(Math.max(...enemyCounts.slice(0, 10))).toBeLessThanOrEqual(3)
+    expect(Math.min(...enemyCounts.slice(85))).toBeGreaterThanOrEqual(7)
+    expect(Math.max(...columnCounts.slice(0, 10))).toBeLessThanOrEqual(5)
+    expect(Math.min(...columnCounts.slice(85))).toBeGreaterThanOrEqual(10)
+    expect(Math.max(...blockCounts.slice(0, 10))).toBeLessThanOrEqual(7)
+    expect(Math.min(...blockCounts.slice(85))).toBeGreaterThanOrEqual(10)
   })
 })

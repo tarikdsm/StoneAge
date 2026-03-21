@@ -102,8 +102,9 @@ The player wins as soon as all enemies are defeated.
 - On campaign completion, the player returns to the menu on input.
 - On defeat, the current map restarts on input.
 
-This means that if the available map slots are `01`, `02`, and `05`, the
-campaign order is `01 -> 02 -> 05`.
+The shipped campaign currently fills every slot from `01` through `99`, so the
+default order is sequential. Sparse slot numbering is still supported by the
+repository and editor if some slots are intentionally cleared later.
 
 ## Restart and continue behavior
 

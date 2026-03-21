@@ -82,6 +82,7 @@ Current palette options:
 
 - start blank
 - use a chosen slot from **02** to **99**
+- overwrite or replace the selected published slot when saved
 - on `localhost`, save directly into the corresponding `public/maps/mapNN.json`
 - on GitHub Pages, publish into the corresponding `public/maps/mapNN.json`
 
@@ -148,6 +149,8 @@ Token handling rules:
 - After clearing a stage, the campaign moves to the next available non-empty
   map slot
 - Published editor maps become part of that progression automatically
+- The bundled campaign currently fills all **99** slots, so editor saves usually
+  replace an existing stage instead of filling a gap
 
 This means the editor is not a separate sandbox. It feeds the same campaign
 sequence used by the game.

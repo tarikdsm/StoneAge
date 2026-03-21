@@ -4,51 +4,35 @@
     "slot":  3,
     "empty":  false,
     "level":  {
-                  "name":  "Ice Cavern 03",
+                  "name":  "Lessons 03 - Twin Gates",
                   "tileSize":  64,
                   "width":  12,
                   "height":  12,
-                  "par":  4,
+                  "par":  3,
                   "objective":  "Crush every raider with the blocks.",
                   "playerSpawn":  {
-                                      "x":  1,
-                                      "y":  10
+                                      "x":  2,
+                                      "y":  9
                                   },
                   "blocks":  [
                                  {
-                                     "x":  2,
-                                     "y":  7
-                                 },
-                                 {
                                      "x":  3,
-                                     "y":  8
-                                 },
-                                 {
-                                     "x":  4,
-                                     "y":  9
-                                 },
-                                 {
-                                     "x":  4,
-                                     "y":  5
+                                     "y":  3
                                  },
                                  {
                                      "x":  5,
-                                     "y":  6
-                                 },
-                                 {
-                                     "x":  6,
-                                     "y":  7
-                                 },
-                                 {
-                                     "x":  6,
                                      "y":  3
                                  },
                                  {
                                      "x":  7,
-                                     "y":  4
+                                     "y":  3
                                  },
                                  {
                                      "x":  8,
+                                     "y":  3
+                                 },
+                                 {
+                                     "x":  2,
                                      "y":  5
                                  }
                              ],
@@ -60,8 +44,8 @@
                                   },
                                   {
                                       "type":  "basic",
-                                      "x":  9,
-                                      "y":  8
+                                      "x":  6,
+                                      "y":  2
                                   }
                               ],
                   "walls":  [
@@ -240,6 +224,14 @@
                                 {
                                     "x":  11,
                                     "y":  10
+                                },
+                                {
+                                    "x":  4,
+                                    "y":  3
+                                },
+                                {
+                                    "x":  6,
+                                    "y":  3
                                 }
                             ]
               }

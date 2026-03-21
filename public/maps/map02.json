@@ -4,34 +4,38 @@
     "slot":  2,
     "empty":  false,
     "level":  {
-                  "name":  "Ice Cavern 02",
+                  "name":  "Lessons 02 - Clear Lane",
                   "tileSize":  64,
                   "width":  12,
                   "height":  12,
                   "par":  2,
                   "objective":  "Crush every raider with the blocks.",
                   "playerSpawn":  {
-                                      "x":  2,
-                                      "y":  9
+                                      "x":  6,
+                                      "y":  8
                                   },
                   "blocks":  [
                                  {
                                      "x":  8,
-                                     "y":  6
+                                     "y":  3
                                  },
                                  {
-                                     "x":  8,
-                                     "y":  7
+                                     "x":  7,
+                                     "y":  3
                                  },
                                  {
-                                     "x":  8,
-                                     "y":  8
+                                     "x":  5,
+                                     "y":  3
+                                 },
+                                 {
+                                     "x":  4,
+                                     "y":  3
                                  }
                              ],
                   "enemies":  [
                                   {
                                       "type":  "basic",
-                                      "x":  2,
+                                      "x":  9,
                                       "y":  2
                                   }
                               ],
@@ -211,6 +215,10 @@
                                 {
                                     "x":  11,
                                     "y":  10
+                                },
+                                {
+                                    "x":  6,
+                                    "y":  4
                                 }
                             ]
               }

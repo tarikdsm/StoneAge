@@ -125,8 +125,8 @@ geometry contract.
 ## Published slot catalog
 
 - There are always **99** published JSON files in `public/maps/`
-- **Map 01** starts as a non-empty published slot
-- **Maps 02-99** start as empty published slots
+- The shipped campaign currently fills **Map 01** through **Map 99** with
+  authored stages
 - The game treats `empty: true` as an unavailable campaign slot
 - The editor may modify Map 01 but may never clear it
 - Maps 02-99 may be created, overwritten, uploaded, downloaded, or cleared
@@ -180,8 +180,9 @@ Canonical files:
 
 Current initial state:
 
-- `map01.json` contains the campaign opening map
-- `map02.json` through `map99.json` contain validated empty slots
+- `map01.json` through `map99.json` contain the authored campaign
+- empty slots remain supported by the schema and editor workflow, but the
+  bundled campaign no longer ships with gaps
 
 ## Runtime loading order
 

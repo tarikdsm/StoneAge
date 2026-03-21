@@ -211,10 +211,10 @@ npm run preview
 
 - Canonical map files live in `public/maps/map01.json` through
   `public/maps/map99.json`
-- `map01.json` starts filled with the default campaign opening
-- `map02.json` through `map99.json` start as validated empty slots
+- The shipped campaign currently fills **all 99** slots with authored stages
 - The game treats `empty: true` slots as unavailable for progression
-- The campaign advances to the next non-empty slot number
+- The default campaign now advances sequentially from **Map 01** through
+  **Map 99**
 
 ## Upload, download, and persistence
 
