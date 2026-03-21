@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { BootScene } from './scenes/BootScene'
 import { MenuScene } from './scenes/MenuScene'
 import { GameScene } from './scenes/GameScene'
+import { MapEditorScene } from './scenes/MapEditorScene'
 import { UIScene } from './scenes/UIScene'
 
 export const GAME_WIDTH = 1280
@@ -35,5 +36,5 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
-  scene: [BootScene, MenuScene, GameScene, UIScene]
+  scene: [BootScene, MenuScene, GameScene, MapEditorScene, UIScene]
 }

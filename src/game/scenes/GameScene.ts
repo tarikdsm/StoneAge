@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import level01 from '../data/levels/level01.json'
+import { createBrowserStorage, formatLevelLabel, getLevel, getNextLevelSlot } from '../data/levelRepository'
 import { createStageState, isGoal, stepStageState, type StageState } from '../core/StageState'
 import { playPushSfx } from '../audio/playPushSfx'
 import { Block } from '../entities/Block'
@@ -10,6 +10,10 @@ import type { Direction, LevelData } from '../types/level'
 import { addPoints, directionVectors, samePoint } from '../utils/grid'
 import { getBoardViewportLayout } from '../utils/layout'
 
+interface GameSceneData {
+  levelSlot?: number
+}
+
 interface UIState {
   levelName: string
   enemiesRemaining: number
@@ -18,8 +22,9 @@ interface UIState {
   help: string
 }
 
-const levelData = level01 as LevelData
 const BOARD_FRAME_PADDING = 24
+const AUTO_ADVANCE_DELAY_MS = 900
+const PLAYER_CAUGHT_ANIMATION_MS = 700
 
 /**
  * Thin Phaser runtime scene responsible for:
@@ -27,10 +32,13 @@ const BOARD_FRAME_PADDING = 24
  * - sampling normalized input
  * - advancing the pure `StageState` simulation
  * - fitting and centering the board inside the current browser viewport
+ * - loading campaign levels through the browser-friendly level repository
  */
 export class GameScene extends Phaser.Scene {
-  private readonly level = levelData
+  private readonly storage = createBrowserStorage()
   private readonly boardOffset = { x: BOARD_FRAME_PADDING, y: BOARD_FRAME_PADDING }
+  private level!: LevelData
+  private levelSlot = 1
   private player!: Player
   private blocks = new Map<string, Block>()
   private enemies = new Map<string, Enemy>()
@@ -40,15 +48,33 @@ export class GameScene extends Phaser.Scene {
   private statusPulse?: Phaser.GameObjects.Rectangle
   private enterKey?: Phaser.Input.Keyboard.Key
   private spaceKey?: Phaser.Input.Keyboard.Key
+  private pendingStatusMessage?: string
+  private pendingAdvance?: Phaser.Time.TimerEvent
+  private playerCaughtAnimationStarted = false
+  private continueLockedUntilMs = 0
 
   constructor() {
     super('GameScene')
   }
 
-  create(): void {
+  create(data: GameSceneData = {}): void {
     this.cameras.main.setBackgroundColor('#08111d')
+    this.blocks.clear()
+    this.enemies.clear()
+    this.pendingStatusMessage = undefined
+    this.pendingAdvance = undefined
+    this.playerCaughtAnimationStarted = false
+    this.continueLockedUntilMs = 0
+    this.lastDirection = 'right'
+    const resolved = this.resolveLevel(data.levelSlot ?? 1)
+    this.levelSlot = resolved.slot
+    this.level = resolved.level
     this.state = createStageState(this.level)
     this.inputController = new InputController(this, this.level.tileSize)
+
+    if (!this.scene.isActive('UIScene')) {
+      this.scene.launch('UIScene')
+    }
 
     this.enterKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER)
     this.spaceKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
@@ -63,17 +89,21 @@ export class GameScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this)
+      this.pendingAdvance?.remove(false)
       this.inputController.destroy()
     })
   }
 
   update(_: number, delta: number): void {
     if (this.state.status !== 'playing') {
-      if ((this.enterKey ? Phaser.Input.Keyboard.JustDown(this.enterKey) : false)
-        || (this.spaceKey ? Phaser.Input.Keyboard.JustDown(this.spaceKey) : false)
-        || this.input.activePointer.leftButtonDown()
-        || this.input.activePointer.rightButtonDown()) {
-        this.scene.restart()
+      this.emitUiState(this.pendingStatusMessage ?? this.state.message)
+
+      if (!this.pendingAdvance && this.time.now >= this.continueLockedUntilMs && this.didPressContinue()) {
+        if (this.state.status === 'lost') {
+          this.scene.restart({ levelSlot: this.levelSlot })
+        } else {
+          this.returnToMenu()
+        }
       }
       return
     }
@@ -87,9 +117,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     const outcome = stepStageState(this.level, this.state, input, delta)
+    if (outcome.statusChanged) {
+      this.handleStatusChange()
+    }
+
     this.syncActors()
     this.animateFrameFeedback(outcome)
-    this.emitUiState(this.state.message)
+    this.emitUiState(this.pendingStatusMessage ?? this.state.message)
   }
 
   private createBoard(): void {
@@ -216,11 +250,16 @@ export class GameScene extends Phaser.Scene {
     if (outcome.crushedEnemyIds.length > 0) {
       this.cameras.main.shake(90, 0.002)
     }
+
+    if (outcome.statusChanged && this.state.status === 'lost') {
+      this.cameras.main.shake(220, 0.004)
+      this.playPlayerCaughtAnimation()
+    }
   }
 
   private emitUiState(status: string): void {
     const payload: UIState = {
-      levelName: `${this.level.name}${isGoal(this.level, this.state.player.gridPosition) ? ' - Exit Ready' : ''}`,
+      levelName: `${formatLevelLabel(this.levelSlot)} - ${this.level.name}${isGoal(this.level, this.state.player.gridPosition) ? ' - Exit Ready' : ''}`,
       enemiesRemaining: this.state.enemies.filter((enemy) => enemy.alive).length,
       objective: this.level.objective,
       status,
@@ -246,6 +285,89 @@ export class GameScene extends Phaser.Scene {
     camera.setSize(viewportWidth, viewportHeight)
     camera.setZoom(layout.zoom)
     camera.centerOn(this.getBoardCenterX(), this.getBoardCenterY())
+  }
+
+  private handleStatusChange(): void {
+    if (this.state.status === 'lost') {
+      this.pendingStatusMessage = undefined
+      this.continueLockedUntilMs = this.time.now + PLAYER_CAUGHT_ANIMATION_MS
+      return
+    }
+
+    if (this.state.status !== 'won') {
+      this.pendingStatusMessage = undefined
+      return
+    }
+
+    const nextSlot = getNextLevelSlot(this.levelSlot, this.storage)
+    if (!nextSlot) {
+      this.pendingStatusMessage = 'Campaign clear! Tap, click, Enter, or Space to return to the menu.'
+      return
+    }
+
+    this.pendingStatusMessage = `${formatLevelLabel(this.levelSlot)} clear. Loading ${formatLevelLabel(nextSlot)}...`
+    this.pendingAdvance = this.time.delayedCall(AUTO_ADVANCE_DELAY_MS, () => {
+      this.scene.restart({ levelSlot: nextSlot })
+    })
+  }
+
+  private didPressContinue(): boolean {
+    return (this.enterKey ? Phaser.Input.Keyboard.JustDown(this.enterKey) : false)
+      || (this.spaceKey ? Phaser.Input.Keyboard.JustDown(this.spaceKey) : false)
+      || this.input.activePointer.leftButtonDown()
+      || this.input.activePointer.rightButtonDown()
+  }
+
+  private resolveLevel(slot: number): { slot: number; level: LevelData } {
+    const resolvedLevel = getLevel(slot, this.storage)
+    if (resolvedLevel) {
+      return { slot, level: resolvedLevel }
+    }
+
+    return {
+      slot: 1,
+      level: getLevel(1, this.storage) as LevelData
+    }
+  }
+
+  private returnToMenu(): void {
+    this.scene.stop('UIScene')
+    this.scene.start('MenuScene')
+  }
+
+  private playPlayerCaughtAnimation(): void {
+    if (this.playerCaughtAnimationStarted) {
+      return
+    }
+
+    this.playerCaughtAnimationStarted = true
+    const predator = this.findClosestLivingEnemy()
+    predator?.playDevourReaction()
+    this.player.playConsumedBy(predator ?? this.player)
+  }
+
+  private findClosestLivingEnemy(): Enemy | undefined {
+    let closestEnemy: Enemy | undefined
+    let closestDistance = Number.POSITIVE_INFINITY
+
+    for (const enemyState of this.state.enemies) {
+      if (!enemyState.alive) {
+        continue
+      }
+
+      const enemyActor = this.enemies.get(enemyState.id)
+      if (!enemyActor) {
+        continue
+      }
+
+      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemyActor.x, enemyActor.y)
+      if (distance < closestDistance) {
+        closestDistance = distance
+        closestEnemy = enemyActor
+      }
+    }
+
+    return closestEnemy
   }
 
   private getBoardPixelWidth(): number {

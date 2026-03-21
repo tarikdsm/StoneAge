@@ -1,23 +1,26 @@
 # Architecture Overview
 
-## Goals
+## Design goals
 
-The project is organized around a few clear boundaries:
+The project is organized around a few stable rules:
 
-- gameplay rules stay pure and testable without Phaser
-- scenes orchestrate runtime and visuals without redefining gameplay logic
-- input is normalized in its own layer before touching the core
-- level layouts remain JSON-authored content
-- responsive browser layout stays a render concern, not a gameplay concern
+- gameplay rules remain pure and Phaser-free
+- scenes coordinate runtime and presentation without reimplementing rules
+- input stays normalized in a separate layer
+- default level content remains JSON-authored
+- browser persistence stays static-hosting friendly
+- editor and campaign logic share the same level repository instead of drifting
+  apart
 
 ## High-level runtime flow
 
-1. `BootScene` loads lightweight placeholder assets.
-2. `MenuScene` presents controls in a responsive browser layout.
-3. `GameScene` samples input every frame, advances the pure simulation, syncs
-   actors, and keeps the board fitted and centered in the viewport.
-4. `UIScene` renders HUD state from the scene event bus in responsive overlay
-   bands.
+1. `BootScene` loads assets.
+2. `MenuScene` lets the player choose `Play` or `Generate Maps`.
+3. `GameScene` loads a map slot from the level repository, steps the pure
+   simulation, and syncs visual actors.
+4. `UIScene` renders gameplay HUD payloads emitted by `GameScene`.
+5. `MapEditorScene` edits 10x10 playable layouts and saves them back through the
+   same level repository used by the campaign.
 
 ## Subsystem boundaries
 
@@ -26,128 +29,150 @@ The project is organized around a few clear boundaries:
 Pure gameplay logic lives here.
 
 - `StageState.ts` is the authoritative real-time simulation model.
-- It does not depend on Phaser.
-- It owns movement state, push rules, crush behavior, enemy pursuit, and
-  win/lose transitions.
-- The simulation advances via `stepStageState(level, state, input, deltaMs)`.
+- It owns movement, pushing, crush logic, enemy pursuit, and win/lose state.
+- It has no Phaser dependency.
+- It is advanced only through `stepStageState(level, state, input, deltaMs)`.
 
-If a rule can be tested without rendering, it belongs here first.
+If a behavior can be tested without rendering, it belongs here first.
 
 ### `src/game/scenes`
 
-Scenes coordinate runtime behavior.
+Scenes own runtime orchestration and presentation.
 
-- `GameScene` owns Phaser objects, scene-level orchestration, event emission,
-  and camera/layout fitting.
-- `UIScene` owns HUD rendering and viewport-aware HUD placement.
-- `MenuScene` owns the responsive title/start screen.
-- Scenes should not duplicate gameplay rules already implemented in `core`.
+- `MenuScene` is the player-facing hub.
+- `GameScene` coordinates loaded level content, input snapshots, pure simulation
+  stepping, auto-progression, and actor sync.
+- `MapEditorScene` coordinates editor UI and authoring interactions.
+- `UIScene` renders HUD overlays for the gameplay scene only, including the
+  always-available return-to-menu control.
 
-### `src/game/entities`
+Scenes should not duplicate rule logic already owned by `core` or the level
+repository.
 
-Entities are view-layer actors.
+### `src/game/data`
 
-- They mirror authoritative positions from `StageState`.
-- They do not decide collisions, movement legality, or win/lose state.
+Gameplay content and repository logic live here.
+
+- `src/game/data/levels/*.json` contains bundled default content.
+- `levelRepository.ts` is the authoritative bridge between:
+  - bundled default levels
+  - browser-saved custom levels
+  - campaign slot ordering
+  - editor-friendly 10x10 authoring data
+  - runtime `LevelData`
+
+This keeps map loading, saving, and progression in one place.
 
 ### `src/game/systems/input`
 
-Input systems translate raw browser/device interaction into normalized intent.
+Input systems convert raw browser/device input into normalized intent.
 
-- keyboard, mouse, and touch behavior are interpreted here
-- this layer resolves ambiguous gestures into movement or push intent
-- it does not mutate gameplay state directly
+- keyboard, mouse, and touch are interpreted here
+- the result is gameplay intent, not direct state mutation
+- both campaign play and scene logic depend on this clean boundary
 
-### `src/game/utils/layout`
+### `src/game/utils`
 
-Pure responsive layout helpers live here.
+Reusable pure helpers live here.
 
-- board-fit calculations stay deterministic and testable
-- scene layout can evolve without leaking into the gameplay core
-- responsive framing rules are shared between runtime scenes and tests
+- `layout.ts` contains viewport/layout math
+- layout logic is kept pure so responsiveness can be reasoned about and tested
+  without rendering
 
-### `src/game/data/levels`
+### `src/game/types`
 
-Level JSON provides authored stage layouts and metadata.
+Cross-module contracts live here.
 
-- runtime code should treat level files as content, not logic
-- board dimensions describe the full authored board bounds
-- authored border walls reduce the playable interior area
+- `level.ts` defines runtime level schema and gameplay-facing types
+- `editor.ts` defines editor-facing 10x10 authoring contracts
 
 ## State ownership and data flow
 
-`GameScene` owns the live `StageState` instance, but it does not define the
-rules for mutating it.
+### Campaign play
 
-- `InputController` produces a `RealtimeInputSnapshot`
-- `stepStageState(...)` advances the pure simulation using delta time
-- `GameScene` updates Phaser actors from resulting `worldPosition` values
-- `GameScene` emits HUD payloads through the game event bus
-- `UIScene` renders that HUD payload independently of the gameplay core
+- `GameScene` asks the level repository for a level slot
+- the repository returns either a browser-saved override or bundled default
+  content
+- `GameScene` creates a `StageState` from that `LevelData`
+- `InputController` creates a normalized input snapshot every frame
+- `stepStageState(...)` mutates the pure simulation state
+- `GameScene` mirrors `worldPosition` into Phaser actors
+- `UIScene` renders HUD state from scene events
 
-This keeps rules deterministic while still allowing responsive real-time play.
+### Map editing
 
-## Real-time simulation model
+- `MapEditorScene` works with `EditableLevelData`, a 10x10 playable-area model
+- saving routes through `levelRepository.ts`
+- the repository converts editor data into authored runtime `LevelData`
+- saved custom maps land in browser `localStorage`
+- the campaign then loads those same saved maps by slot number
+- editor-side validation prevents saving maps that are missing the required
+  Player start or Exit
 
-The simulation is continuous, but still grid-aware:
+## Campaign progression model
 
-- actors move every frame between adjacent tile centers
-- occupancy checks use authored grid cells plus in-flight movement reservations
-- enemies choose a new direction whenever they finish a lane segment
-- pushes start block motion immediately instead of resolving a whole turn
-- win/lose checks run continuously after movement advances
+- The campaign always starts at **Map 01**.
+- After a stage is won, `GameScene` asks the repository for the next available
+  slot number greater than the current one.
+- If a next slot exists, the game auto-advances after a short delay.
+- If there is no next slot, the campaign ends and returns to the menu on input.
 
-## Responsive browser layout
+This design supports sparse map numbering while keeping progression logic simple.
 
-Responsive layout is intentionally handled outside the gameplay core.
+## Responsive layout model
 
-- Phaser runs in `RESIZE` scale mode so the canvas follows the browser viewport
-- `GameScene` fits the full authored board inside roughly 80% of the available
-  viewport and centers it on screen
-- `UIScene` places HUD panels in top/bottom overlay bands so the board framing
-  does not depend on HUD-specific calculations
-- pointer direction logic still works because input is resolved through Phaser
-  world coordinates after camera zoom/centering is applied
+Responsive layout is a render concern, not a gameplay concern.
 
-The goal is that any map size remains fully visible and centered without
-changing the simulation's logical board coordinates.
+- Phaser runs in `RESIZE` scale mode
+- `GameScene` fits and centers the full authored board in the viewport
+- `UIScene` renders responsive HUD bands independently of gameplay rules
+- `MapEditorScene` lays out left panel, center board, and right palette
+  responsively for desktop and touch browsers
+
+Logical grid coordinates never change in response to viewport size changes.
+
+## Persistence model
+
+- Bundled level content ships with the repo
+- Custom/edited maps persist via browser `localStorage`
+- This keeps the project compatible with GitHub Pages and other static hosts
+- There is currently no server-side persistence or sync layer
 
 ## Testing strategy
 
-Automated tests should target:
+Automated tests should focus on pure behavior:
 
-- pure gameplay simulation in `core`
-- reusable helpers in `utils`
-- any non-visual rule or layout math that can be tested without Phaser
+- gameplay rules in `core`
+- repository conversion/progression logic in `data`
+- layout math in `utils`
 
-Scene code should stay thin enough that most correctness is still captured by
+Phaser scenes should stay thin enough that most correctness remains verifiable by
 pure tests.
 
 ## Extension guidance
 
-### Adding a new gameplay mechanic
+### Adding a gameplay mechanic
 
 Preferred order:
 
-1. extend data/schema if needed
-2. update `StageState.ts` and tests
-3. update scene rendering/feedback
-4. update documentation
+1. update the data contract if needed
+2. update `StageState.ts`
+3. add or update tests
+4. update scene feedback
+5. update docs
 
-### Adding a new enemy type
+### Adding a new editor feature
 
-- extend `EnemyDefinition` and `EnemyState`
-- document the new behavior in `docs/GAMEPLAY_MECHANICS.md`
-- update simulation logic and tests before scene visuals
+Preferred order:
 
-### Adding more responsive presentation behavior
+1. update `src/game/types/editor.ts`
+2. update `levelRepository.ts` if persistence or conversion rules change
+3. update `MapEditorScene.ts`
+4. add tests for pure repository behavior
+5. update docs
 
-- keep viewport math in `src/game/utils/layout.ts` when possible
-- keep gameplay coordinates and collision rules unchanged
-- test pure layout calculations before wiring them into scenes
+### Adding more default levels
 
-### Adding more levels
-
-- keep level data in JSON
-- keep progression logic outside the core stage simulation
-- document schema or authoring-rule changes in `docs/LEVEL_DATA.md`
+- keep the content JSON-authored
+- register them through the level repository
+- document numbering/progression expectations if the campaign structure changes

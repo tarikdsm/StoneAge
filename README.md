@@ -3,105 +3,133 @@
 A production-minded web game prototype inspired by **Atari Stone Age / Pengo**,
 built with **Phaser 3 + TypeScript + Vite**.
 
-The project recreates the push/crush gameplay loop in a browser-friendly,
-static-hosting-friendly structure rather than attempting a direct port. The game
-now runs as a continuous real-time simulation: enemies keep moving while the
-player is idle, but grid-aware rules still keep movement, pushing, collisions,
-and crush behavior readable and testable.
+The project combines:
 
-## Current highlights
+- a pure real-time gameplay core
+- a browser-side campaign flow that starts at Map 01
+- a built-in 10x10 map generator/editor
+- static-hosting-friendly persistence through browser `localStorage`
 
-- Pure real-time gameplay core in `src/game/core/StageState.ts`
-- Desktop and touch input through a separate normalization layer
-- JSON-authored level data
-- Responsive board auto-fit that keeps the full authored map visible and
-  centered in the browser viewport
+## Current feature set
+
+- Real-time grid-aware movement, pushing, and crush rules
+- Campaign progression that starts at Map 01 and advances to the next available
+  map number
+- Menu hub with separate `Play` and `Generate Maps` flows
+- Always-available in-game `Menu` button for returning to the start screen
+- Defeat feedback where the player is visibly eaten by the enemy that catches
+  them
+- Browser-side map editor for Map 01 and custom maps 02-99
+- Editor replacement/erase workflow with single-slot validation for Player and
+  Exit
+- JSON-authored default level content
+- Responsive gameplay board fitting and centered viewport framing
+- Desktop and touch input support
 - GitHub Pages-ready static deployment
-- Vitest coverage for pure gameplay and layout helpers
-- Project-level documentation policy with required code and markdown updates
+- Vitest, ESLint, and build validation
 
-## Features
+## Main flows
 
-- Top-down grid-aware movement
-- Pushable stone blocks with crush behavior
-- Enemies that continuously pursue the player
-- Win/lose states with restart flow
-- One playable JSON-authored stage
-- Keyboard, mouse, and touch controls
-- Responsive menu, HUD, and board framing across desktop/mobile browsers
+### Play
+
+- Starts from **Map 01**
+- Loads the current authored/default map or the player's saved override for that
+  slot
+- On stage clear, automatically advances to the next available map number
+- If there is no next map, the campaign ends and returns to the menu on input
+- The gameplay HUD always includes a `Menu` button for leaving the run early
+
+### Generate Maps
+
+- Opens the built-in browser-side 10x10 map generator
+- Starts with a blank 10x10 playable map
+- Lets the player load saved maps from the left-side list
+- Lets the player save new maps to slots **02-99**
+- Lets the player modify **Map 01** but never delete it
+- Lets the player modify or delete custom maps **02-99**
+- Includes an `Eraser` tool and supports replacing an occupied tile by placing a
+  different item over it
+- Refuses saving when the map does not contain exactly one Player start and one
+  Exit
 
 ## Controls
 
-### Desktop
+### Campaign gameplay
 
 - **Arrow keys / WASD**: move while held
 - **Space**: push in the current facing direction
 - **Left mouse click**: movement intent
 - **Right mouse click**: push intent
+- **Touch swipe**: movement intent
+- **Touch tap on adjacent block**: push intent
+- **HUD `Menu` button**: return to the start screen without reloading the page
 
-### Mobile / Tablet
+### Map generator
 
-- **Swipe**: movement intent
-- **Tap an adjacent block**: push intent
-- **Other taps**: movement intent
+- **Click / tap a tile**: place or remove the selected item
+- **Left panel**: create new maps or load existing maps
+- **Right panel**: choose what to place, select a save slot for new maps, save,
+  and delete
+- **Eraser tool**: remove any existing item from a tile
 
 ## Documentation map
 
 - [`docs/DOCUMENTATION_POLICY.md`](docs/DOCUMENTATION_POLICY.md)
-  Documentation rules, maintenance expectations, and the required update policy
-  for future changes.
+  Repository documentation rules and maintenance requirements.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-  Runtime flow, subsystem boundaries, state ownership, and viewport/layout
+  Runtime flow, subsystem boundaries, state ownership, and scene
   responsibilities.
 - [`docs/GAMEPLAY_MECHANICS.md`](docs/GAMEPLAY_MECHANICS.md)
-  Gameplay rules, input interpretation, simulation behavior, and win/lose
-  conditions.
+  Gameplay rules, progression, input interpretation, and win/lose behavior.
 - [`docs/LEVEL_DATA.md`](docs/LEVEL_DATA.md)
-  Level schema, authoring semantics, and current stage layout assumptions.
+  Level schema, board sizing semantics, and authoring rules.
+- [`docs/MAP_EDITOR.md`](docs/MAP_EDITOR.md)
+  Map generator behavior, persistence, slot rules, and editing workflow.
 
 ## Architecture summary
 
 ### Scenes
 
 - **BootScene**
-  Loads lightweight placeholder assets and enters the menu.
+  Loads assets and enters the menu.
 - **MenuScene**
-  Presents the premise and controls using a responsive layout.
+  Presents the main entry points: `Play` and `Generate Maps`.
 - **GameScene**
-  Samples normalized input, advances the pure simulation, syncs actors, and
-  keeps the full board centered/fitted in the browser viewport.
+  Loads a map slot through the level repository, advances the pure simulation,
+  and syncs render actors.
+- **MapEditorScene**
+  Edits 10x10 playable layouts and saves them into browser storage.
 - **UIScene**
-  Renders HUD information in responsive top/bottom overlay bands.
+  Renders HUD information for gameplay.
 
-### Core gameplay modules
+### Core modules
 
 - **`src/game/core/StageState.ts`**
-  Authoritative pure simulation for movement, pushing, crush logic, enemy
-  pursuit, and win/lose state.
+  Authoritative pure gameplay simulation.
+- **`src/game/data/levelRepository.ts`**
+  Level loading, conversion, progression order, and browser persistence.
 - **`src/game/systems/input/InputController.ts`**
-  Normalizes keyboard, mouse, and touch into movement/push intent.
+  Normalized keyboard, mouse, and touch intent.
 - **`src/game/utils/layout.ts`**
-  Pure responsive layout helpers used by scenes to fit the board and HUD.
-- **`src/game/entities/*`**
-  View-layer actors that mirror authoritative world positions from the core.
-- **`src/game/data/levels/*.json`**
-  Authored level layouts and metadata.
+  Pure responsive layout helpers.
+- **`src/game/types/level.ts`**
+  Runtime level schema.
+- **`src/game/types/editor.ts`**
+  Editor-facing 10x10 authoring schema.
 
 ## Project structure
 
 ```text
-public/assets
-  audio/
-  sprites/
 docs/
   ARCHITECTURE.md
   DOCUMENTATION_POLICY.md
   GAMEPLAY_MECHANICS.md
   LEVEL_DATA.md
+  MAP_EDITOR.md
 src/game
   config.ts
   core/
-  data/levels/
+  data/
   entities/
   scenes/
   systems/input/
@@ -117,7 +145,7 @@ npm install
 npm run dev
 ```
 
-Local dev URL:
+Open:
 
 - `http://localhost:3000/StoneAge/`
 
@@ -136,47 +164,29 @@ npm run build
 npm run preview
 ```
 
-The project builds into `dist/` and is suitable for static hosting.
+## Map persistence
 
-## Responsive board framing
+- Default content ships with `src/game/data/levels/level01.json`
+- Saved/generated maps are stored in browser `localStorage`
+- Map 01 can be overridden by the player through the editor
+- Maps 02-99 exist only when the player saves them
+- Campaign progression uses the next available saved/default slot number
 
-- The Phaser canvas resizes to the live browser viewport.
-- The entire authored board is automatically fitted into roughly 80% of the
-  available viewport.
-- The board is centered in the browser window instead of being anchored to a
-  fixed 1280x720 stage layout.
-- HUD panels are laid out independently in responsive overlay bands so they do
-  not drive gameplay rules.
+Because persistence is browser-local, generated maps belong to the browser
+profile/device where they were created unless the player exports the storage by
+other means in the future.
 
-## Real-time gameplay model
+## Level sizing
 
-- The simulation advances every frame using delta time.
-- Player, enemy, and pushed-block movement travels continuously between tile
-  centers.
-- Grid-aware occupancy still drives walls, push validity, crush checks, and goal
-  checks.
-- Enemies continue moving even when the player stands still.
-- Pushes start block motion immediately instead of resolving an entire turn.
-
-## Level data
-
-Levels are defined in JSON under `src/game/data/levels/` using the `LevelData`
-contract from `src/game/types/level.ts`.
-
-The current first stage uses:
-
-- total board: `12 x 12`
-- playable interior with border walls: `10 x 10`
-- five blocks
-- three enemies
-- six interior wall columns
-
-See [`docs/LEVEL_DATA.md`](docs/LEVEL_DATA.md) for the full schema and authoring
-rules.
+- The editor always works with a **10x10 playable area**
+- Runtime `LevelData` still uses a total authored board that includes a
+  one-tile wall border
+- Current authored board size: `12 x 12`
+- Current playable interior: `10 x 10`
 
 ## GitHub Pages deployment
 
-This repository is prepared for static deployment on GitHub Pages for:
+Repository:
 
 - `tarikdsm/StoneAge`
 
@@ -184,20 +194,16 @@ Expected public URL:
 
 - `https://tarikdsm.github.io/StoneAge/`
 
-Deployment details:
+Deployment notes:
 
 - `vite.config.ts` uses `base: '/StoneAge/'`
-- `.github/workflows/deploy-pages.yml` installs dependencies, builds the app,
-  uploads `dist/`, and deploys it through GitHub Pages
+- `.github/workflows/deploy-pages.yml` builds and deploys `dist/`
 - `BootScene` loads assets through `import.meta.env.BASE_URL`
+- Browser persistence for custom maps works on static hosting because it relies
+  on `localStorage`, not a backend
 
-Enable **GitHub Pages** in the repository settings and set the source to
-**GitHub Actions** so pushes to `main` publish the latest build.
+## Maintenance rule
 
-## Project notes
-
-- Placeholder art/audio are intentionally lightweight.
-- The push sound effect is generated at runtime to keep the repository binary
-  light.
-- Documentation must be updated together with meaningful behavior or structure
-  changes. See [`docs/DOCUMENTATION_POLICY.md`](docs/DOCUMENTATION_POLICY.md).
+Meaningful code changes in this repository are considered incomplete until the
+relevant docs are updated. See
+[`docs/DOCUMENTATION_POLICY.md`](docs/DOCUMENTATION_POLICY.md).

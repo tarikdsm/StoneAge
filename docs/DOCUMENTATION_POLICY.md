@@ -1,160 +1,167 @@
 # Documentation Policy
 
-Stone Age: Ice Shift treats documentation as part of the shipped product and
-part of the code contract. Documentation drift is a bug.
+Stone Age: Ice Shift treats documentation as part of the delivered codebase.
+Documentation drift is a bug.
 
-This policy defines the minimum documentation standard for every future change
-in this repository.
+This policy defines how documentation must be created, updated, and reviewed in
+this repository from now on.
 
 ## Goals
 
-Documentation in this project must help a contributor:
+Documentation must help contributors:
 
 - understand what the game does
-- understand where a rule or responsibility lives
-- change behavior safely without guessing
-- discover the current contracts for runtime, input, layout, and level data
+- find the source of truth for a rule or responsibility
+- modify behavior safely
+- understand how campaign play, map generation, persistence, and runtime
+  architecture fit together
 
-## Documentation principles
+## Core principles
 
-- Document intent, rules, boundaries, and invariants.
-- Prefer one authoritative explanation over repeated partial explanations.
-- Keep user-facing docs and developer-facing docs aligned.
+- Document intent, invariants, boundaries, and contracts.
+- Prefer one authoritative explanation over duplicated partial explanations.
+- Keep code comments concise and high-signal.
+- Keep user-facing and developer-facing docs aligned.
 - Treat tests as executable documentation for pure behavior.
-- Use code comments to explain why and contract details, not obvious syntax.
-- Update docs in the same change whenever behavior, architecture, input, layout,
-  schema, or tooling changes.
+- Update documentation in the same change whenever behavior or structure
+  changes.
 
-## Canonical documentation map
+## Required repository docs
 
-The repository must keep these documents current:
+The following files are canonical and must stay current:
 
 - `README.md`
-  Product overview, setup, commands, controls, deployment, documentation map,
-  and the current high-level behavior visible to players and contributors.
+  Product overview, commands, major user flows, controls, deployment, and
+  documentation map.
 - `docs/ARCHITECTURE.md`
-  Runtime flow, subsystem boundaries, ownership, layout/render responsibilities,
-  and extension guidance.
+  Runtime flow, subsystem boundaries, ownership, and extension guidance.
 - `docs/GAMEPLAY_MECHANICS.md`
-  Gameplay rules, simulation behavior, collision/push/crush logic, win/lose
-  conditions, and player-facing control interpretation.
+  Gameplay rules, progression, input semantics, and win/lose behavior.
 - `docs/LEVEL_DATA.md`
-  Level schema, authoring rules, board sizing semantics, and the current level
-  layout assumptions.
+  Runtime/editor level contracts, board semantics, slot rules, and persistence.
+- `docs/MAP_EDITOR.md`
+  Editor UI behavior, slot workflow, and save/delete constraints.
 - `docs/DOCUMENTATION_POLICY.md`
-  The rules in this file.
+  This policy.
 
-## Code-level documentation requirements
+## Required code-level documentation
 
-### Module-level documentation
+### Module-level docs
 
-Add module documentation when a file contains:
+Add module-level documentation when a file contains:
 
 - authoritative gameplay rules
-- scene/runtime orchestration
-- layout or rendering coordination logic
+- level repository or persistence logic
+- scene orchestration
+- editor logic
 - input normalization
-- reusable helpers with contract-heavy behavior
-- schema/types shared across modules
+- reusable contract-heavy helpers
+- shared schemas or exported types
 
 Module docs should explain:
 
 - responsibility
-- what the module owns
-- what it depends on
-- important invariants or ordering rules
+- ownership boundaries
+- collaborators
+- important invariants
 
-### Class documentation
+### Class docs
 
 Document classes that:
 
 - orchestrate runtime behavior
 - coordinate multiple collaborators
+- own lifecycle-sensitive state
 - act as extension points
-- own lifecycle-sensitive responsibilities
 
-Class docs should explain purpose, collaborators, and lifecycle expectations.
-
-### Function and method documentation
+### Function and method docs
 
 Document functions or methods when they:
 
-- implement game rules
-- define state transitions
-- depend on a specific order of operations
+- implement gameplay rules
+- implement progression or persistence rules
 - perform non-obvious calculations
-- expose reusable behavior across modules
+- convert between important data shapes
+- rely on specific ordering/side effects
 
-Do not add comments for trivial assignments, loops, or self-explanatory helpers.
-
-### Type and interface documentation
+### Type docs
 
 Document exported types that encode:
 
-- state contracts
-- data schema
+- runtime state
+- level schemas
+- editor schemas
 - command/result payloads
-- extension-facing interfaces
+- extension-facing contracts
 
-Type docs should explain semantics, not repeat field names.
+## Comment guidelines
 
-## Comment style
+- Use TSDoc or concise block comments for exported modules, classes, and
+  important functions.
+- Use inline comments only for edge cases or non-obvious implementation choices.
+- Do not narrate obvious syntax.
+- Remove stale comments immediately when code changes.
 
-- Prefer short TSDoc or concise block comments.
-- Keep comments close to the code they explain.
-- Use inline comments only for edge cases, non-obvious decisions, or subtle
-  coupling.
-- Remove or rewrite comments that become stale.
-- Avoid narrating what the next line of code obviously does.
-
-## Required documentation updates by change type
+## Required doc updates by change type
 
 ### Gameplay rule change
 
 Update:
 
-- code-level docs near the changed rule
+- code docs near the changed rule
+- tests
 - `docs/GAMEPLAY_MECHANICS.md`
-- tests that demonstrate the rule
-- `README.md` if the player-visible behavior changed
+- `README.md` if player-facing behavior changed
 
 ### Architecture or runtime-flow change
 
 Update:
 
-- code-level docs for the touched orchestration modules
+- touched module/class docs
 - `docs/ARCHITECTURE.md`
-- `README.md` if setup, runtime expectations, or major behavior changed
+- `README.md`
 
-### Input or responsive layout change
+### Input, responsive layout, or UI-flow change
 
 Update:
 
-- code-level docs in input/layout/scene modules
+- touched scene/input/layout docs
 - `README.md`
 - `docs/ARCHITECTURE.md`
-- `docs/GAMEPLAY_MECHANICS.md` if the player-facing interpretation changed
+- `docs/GAMEPLAY_MECHANICS.md` if player-facing semantics changed
 
-### Level schema or authored-content convention change
+### Level schema, map slot, or persistence change
 
 Update:
 
-- code-level docs in schema/types modules
+- touched type/repository docs
+- tests for pure behavior
 - `docs/LEVEL_DATA.md`
-- `README.md` if the change affects discoverability or authoring workflow
+- `docs/MAP_EDITOR.md` if editor behavior changed
+- `README.md`
 
-## Documentation quality checklist
+### Map editor feature change
 
-Before finishing a change, verify:
+Update:
 
-- the source of truth for the behavior is documented once and clearly
-- any new module/class/exported contract has appropriate code-level docs
-- tests still describe the current behavior truthfully
-- markdown docs match the current implementation
-- setup, commands, and links still work
-- wording is concise, specific, and free of outdated references
+- `src/game/types/editor.ts` docs if contracts changed
+- `src/game/data/levelRepository.ts` docs if conversion/storage rules changed
+- `docs/MAP_EDITOR.md`
+- `docs/ARCHITECTURE.md`
+- `README.md`
 
-## Process rule for this project
+## Review checklist
 
-From this point forward, every meaningful change in Stone Age: Ice Shift should
-be treated as incomplete until its relevant documentation has been updated.
+Before considering a change complete, verify:
+
+- the source of truth for the behavior is documented clearly
+- new modules/classes/exports have the right level of docs
+- tests still describe the current pure behavior truthfully
+- repository markdown docs match the current implementation
+- commands and doc links still work
+- no outdated comments remain nearby
+
+## Project rule
+
+In this repository, meaningful functionality changes are incomplete until the
+relevant documentation has been updated in the same change set.

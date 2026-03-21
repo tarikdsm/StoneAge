@@ -19,6 +19,8 @@ export interface EnemyDefinition extends GridPoint {
  *
  * Runtime assumptions:
  * - `width` and `height` define the total legal board bounds.
+ * - editor-authored 10x10 playable maps are converted into this total-board
+ *   shape by adding a border wall ring around the playable area.
  * - `playerSpawn`, `blocks`, `enemies`, `goals`, and `walls` are all expressed
  *   in grid coordinates inside that total board.
  * - if border walls are authored, they reduce the open interior play area.

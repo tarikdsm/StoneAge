@@ -18,6 +18,8 @@ interface UIState {
 export class UIScene extends Phaser.Scene {
   private topPanel?: Phaser.GameObjects.Rectangle
   private bottomPanel?: Phaser.GameObjects.Rectangle
+  private menuButton?: Phaser.GameObjects.Rectangle
+  private menuButtonText?: Phaser.GameObjects.Text
   private titleText?: Phaser.GameObjects.Text
   private objectiveText?: Phaser.GameObjects.Text
   private enemiesText?: Phaser.GameObjects.Text
@@ -34,6 +36,22 @@ export class UIScene extends Phaser.Scene {
 
     this.bottomPanel = this.add.rectangle(0, 0, 10, 10, 0x020617, 0.78)
       .setStrokeStyle(2, 0x38bdf8, 0.14)
+
+    this.menuButton = this.add.rectangle(0, 0, 10, 10, 0x1e293b, 1)
+      .setStrokeStyle(2, 0x38bdf8, 0.28)
+      .setInteractive({ useHandCursor: true })
+
+    this.menuButtonText = this.add.text(0, 0, 'Menu', {
+      fontFamily: 'Arial',
+      color: '#f8fafc',
+      fontStyle: 'bold'
+    }).setOrigin(0.5)
+
+    this.menuButton.on('pointerup', (_pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation()
+      this.scene.stop('GameScene')
+      this.scene.start('MenuScene')
+    })
 
     this.titleText = this.add.text(0, 0, '', {
       fontFamily: 'Arial',
@@ -103,14 +121,25 @@ export class UIScene extends Phaser.Scene {
     const enemiesSize = clamp(width * 0.018, 16, 22)
     const statusSize = clamp(width * 0.015, 14, 18)
     const helpSize = clamp(width * 0.0115, 11, 14)
+    const menuButtonWidth = clamp(width * 0.1, 74, 108)
+    const menuButtonHeight = clamp(height * 0.05, 30, 38)
+
+    this.menuButton
+      ?.setPosition(innerRight - menuButtonWidth, topPanelTop + 12)
+      .setSize(menuButtonWidth, menuButtonHeight)
+
+    this.menuButtonText
+      ?.setPosition(innerRight - menuButtonWidth / 2, topPanelTop + 12 + menuButtonHeight / 2)
+      .setFontSize(clamp(width * 0.012, 12, 14))
 
     this.titleText
       ?.setPosition(innerLeft, topPanelTop + 12)
       .setOrigin(0, 0)
       .setFontSize(titleSize)
+      .setWordWrapWidth(panelWidth - menuButtonWidth - 52)
 
     this.enemiesText
-      ?.setPosition(innerRight, topPanelTop + 14)
+      ?.setPosition(innerRight, topPanelTop + 18 + menuButtonHeight)
       .setOrigin(1, 0)
       .setFontSize(enemiesSize)
 

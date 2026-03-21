@@ -5,6 +5,7 @@ import type { GridPoint } from '../types/level'
 
 export class Enemy extends GridActor {
   alive = true
+  private devouring = false
 
   constructor(scene: Phaser.Scene, tileSize: number, boardOrigin: GridPoint, spawn: GridPoint) {
     super(scene, tileSize, boardOrigin, spawn)
@@ -36,6 +37,30 @@ export class Enemy extends GridActor {
       duration: 140,
       ease: 'Quad.In',
       onComplete: () => this.destroy()
+    })
+  }
+
+  /** Briefly exaggerates the enemy pose so the caught-player animation reads as a chomp. */
+  playDevourReaction(): void {
+    if (!this.alive || this.devouring) {
+      return
+    }
+
+    this.devouring = true
+    this.setDepth(9)
+    this.scene.tweens.add({
+      targets: this,
+      scaleX: 1.18,
+      scaleY: 0.82,
+      angle: -8,
+      duration: 120,
+      yoyo: true,
+      repeat: 1,
+      ease: 'Sine.InOut',
+      onComplete: () => {
+        this.devouring = false
+        this.setDepth(0)
+      }
     })
   }
 }
