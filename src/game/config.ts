@@ -7,6 +7,13 @@ import { UIScene } from './scenes/UIScene'
 export const GAME_WIDTH = 1280
 export const GAME_HEIGHT = 720
 
+/**
+ * Global Phaser configuration.
+ *
+ * The project uses `RESIZE` mode so the canvas always matches the browser
+ * viewport. Individual scenes are then responsible for fitting their content
+ * inside that live viewport without affecting the pure gameplay simulation.
+ */
 export const gameConfig: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'app',
@@ -16,7 +23,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
     antialias: true
   },
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
     width: GAME_WIDTH,
     height: GAME_HEIGHT,

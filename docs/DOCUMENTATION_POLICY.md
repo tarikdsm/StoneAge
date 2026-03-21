@@ -1,149 +1,160 @@
 # Documentation Policy
 
-This repository uses a **high-signal, low-noise** documentation standard. Documentation should make it easier to understand, extend, and safely modify the game. It should not restate obvious code.
+Stone Age: Ice Shift treats documentation as part of the shipped product and
+part of the code contract. Documentation drift is a bug.
 
-## Core principles
+This policy defines the minimum documentation standard for every future change
+in this repository.
 
-- Document **intent, rules, contracts, and boundaries**.
-- Do not document syntax that is already obvious from the code.
-- Prefer **one authoritative explanation** over repeating the same detail in many places.
-- Keep docs synchronized with behavior. If a code change invalidates a doc comment or markdown file, update both in the same change.
+## Goals
 
-## What must be documented
+Documentation in this project must help a contributor:
 
-### Repository-level documentation
+- understand what the game does
+- understand where a rule or responsibility lives
+- change behavior safely without guessing
+- discover the current contracts for runtime, input, layout, and level data
 
-The repository must maintain:
+## Documentation principles
 
-- `README.md` for product overview, setup, controls, and navigation.
-- `docs/ARCHITECTURE.md` for subsystem boundaries, runtime flow, and extension guidance.
-- `docs/GAMEPLAY_MECHANICS.md` for gameplay rules, turn order, and state transitions.
-- This policy file for documentation standards.
+- Document intent, rules, boundaries, and invariants.
+- Prefer one authoritative explanation over repeated partial explanations.
+- Keep user-facing docs and developer-facing docs aligned.
+- Treat tests as executable documentation for pure behavior.
+- Use code comments to explain why and contract details, not obvious syntax.
+- Update docs in the same change whenever behavior, architecture, input, layout,
+  schema, or tooling changes.
 
-### File and module documentation
+## Canonical documentation map
 
-Add module-level documentation when a file contains one of the following:
+The repository must keep these documents current:
 
-- a core gameplay rule implementation
-- an orchestration module with non-trivial responsibilities
-- a reusable subsystem with input/output expectations
-- a schema or data contract relied on by multiple modules
+- `README.md`
+  Product overview, setup, commands, controls, deployment, documentation map,
+  and the current high-level behavior visible to players and contributors.
+- `docs/ARCHITECTURE.md`
+  Runtime flow, subsystem boundaries, ownership, layout/render responsibilities,
+  and extension guidance.
+- `docs/GAMEPLAY_MECHANICS.md`
+  Gameplay rules, simulation behavior, collision/push/crush logic, win/lose
+  conditions, and player-facing control interpretation.
+- `docs/LEVEL_DATA.md`
+  Level schema, authoring rules, board sizing semantics, and the current level
+  layout assumptions.
+- `docs/DOCUMENTATION_POLICY.md`
+  The rules in this file.
+
+## Code-level documentation requirements
+
+### Module-level documentation
+
+Add module documentation when a file contains:
+
+- authoritative gameplay rules
+- scene/runtime orchestration
+- layout or rendering coordination logic
+- input normalization
+- reusable helpers with contract-heavy behavior
+- schema/types shared across modules
 
 Module docs should explain:
 
-- the module’s responsibility
-- what it owns vs what it depends on
-- any important invariants or assumptions
+- responsibility
+- what the module owns
+- what it depends on
+- important invariants or ordering rules
 
 ### Class documentation
 
-Document classes that coordinate state, encapsulate gameplay behavior, or serve as extension points. Class docs should explain:
+Document classes that:
 
-- purpose
-- major collaborators
-- lifecycle or ownership expectations
+- orchestrate runtime behavior
+- coordinate multiple collaborators
+- act as extension points
+- own lifecycle-sensitive responsibilities
+
+Class docs should explain purpose, collaborators, and lifecycle expectations.
 
 ### Function and method documentation
 
-Document functions/methods when they:
+Document functions or methods when they:
 
-- implement important game rules
-- mutate or derive core game state
-- have non-obvious inputs/outputs
-- enforce ordering or transition rules
-- would be risky to change without understanding side effects
+- implement game rules
+- define state transitions
+- depend on a specific order of operations
+- perform non-obvious calculations
+- expose reusable behavior across modules
 
-Short helper functions do **not** need comments unless their behavior is subtle.
+Do not add comments for trivial assignments, loops, or self-explanatory helpers.
 
 ### Type and interface documentation
 
-Document public or cross-module types that encode rules or data contracts, especially:
+Document exported types that encode:
 
-- state objects
-- level schema objects
+- state contracts
+- data schema
 - command/result payloads
 - extension-facing interfaces
 
-Type docs should clarify semantics, not restate property names.
+Type docs should explain semantics, not repeat field names.
 
-### Game rules and state transitions
+## Comment style
 
-The following rules must always be documented in either code or docs:
+- Prefer short TSDoc or concise block comments.
+- Keep comments close to the code they explain.
+- Use inline comments only for edge cases, non-obvious decisions, or subtle
+  coupling.
+- Remove or rewrite comments that become stale.
+- Avoid narrating what the next line of code obviously does.
 
-- movement rules
-- push rules
-- collision/occupancy rules
-- crush logic
-- enemy turn order and decision rules
-- win/lose conditions
-- restart behavior
-- any rule that depends on turn sequencing
+## Required documentation updates by change type
 
-### Input behavior
+### Gameplay rule change
 
-Desktop and mobile behavior must be documented in both:
+Update:
 
-- user-facing docs (`README.md`)
-- developer-facing docs where the input rules are implemented or explained
+- code-level docs near the changed rule
+- `docs/GAMEPLAY_MECHANICS.md`
+- tests that demonstrate the rule
+- `README.md` if the player-visible behavior changed
 
-This includes ambiguity resolution, such as how taps/clicks are interpreted.
+### Architecture or runtime-flow change
 
-### Level data and schema
+Update:
 
-JSON level structure must be documented where developers can discover it quickly. Required documentation:
+- code-level docs for the touched orchestration modules
+- `docs/ARCHITECTURE.md`
+- `README.md` if setup, runtime expectations, or major behavior changed
 
-- field definitions
-- required vs optional fields
-- runtime assumptions and constraints
-- semantic meaning of walls, goals, blocks, and enemy definitions
+### Input or responsive layout change
 
-## What should not be over-documented
+Update:
 
-Avoid comments for:
+- code-level docs in input/layout/scene modules
+- `README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/GAMEPLAY_MECHANICS.md` if the player-facing interpretation changed
 
-- obvious assignments or loops
-- trivial getters/setters
-- code that is already clearer than the comment
-- repeated explanations already covered by nearby module docs or markdown docs
+### Level schema or authored-content convention change
 
-If a comment merely narrates the next line, delete it.
+Update:
 
-## Inline comments vs higher-level documentation
+- code-level docs in schema/types modules
+- `docs/LEVEL_DATA.md`
+- `README.md` if the change affects discoverability or authoring workflow
 
-Use inline comments only when they explain:
+## Documentation quality checklist
 
-- why a specific implementation choice exists
-- an important exception to the normal rule
-- a subtle edge case
-- a coupling that is not obvious from types alone
+Before finishing a change, verify:
 
-Use markdown docs or JSDoc/TSDoc when describing broader behavior, contracts, architecture, or multi-step logic.
+- the source of truth for the behavior is documented once and clearly
+- any new module/class/exported contract has appropriate code-level docs
+- tests still describe the current behavior truthfully
+- markdown docs match the current implementation
+- setup, commands, and links still work
+- wording is concise, specific, and free of outdated references
 
-## TODO / FIXME policy
+## Process rule for this project
 
-- Use `TODO:` only for a concrete future improvement that is intentionally deferred.
-- Use `FIXME:` only for a known correctness or maintainability issue.
-- Every `TODO:` or `FIXME:` must be actionable and specific.
-- Do not leave speculative or vague placeholders.
-- Prefer tracking large work in issues rather than scattering many TODOs in code.
-
-## Keeping documentation synchronized
-
-When changing behavior, architecture, or data contracts:
-
-1. update the code
-2. update the nearest relevant code-level documentation
-3. update markdown docs if the change affects architecture, gameplay, setup, or schemas
-4. update tests when they help keep documentation truthful
-
-Documentation drift is treated as a bug.
-
-## Review checklist
-
-Before merging a change, verify:
-
-- new modules/classes have the right level of documentation
-- gameplay-rule changes are reflected in docs and tests
-- README links and commands still work
-- level schema docs still match the runtime parser/usage
-- comments explain intent rather than mechanics
+From this point forward, every meaningful change in Stone Age: Ice Shift should
+be treated as incomplete until its relevant documentation has been updated.

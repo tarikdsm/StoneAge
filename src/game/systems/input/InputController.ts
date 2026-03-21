@@ -5,8 +5,8 @@ const swipeThreshold = 30
 const deadZone = 8
 
 interface PointerSnapshot {
-  x: number
-  y: number
+  screenX: number
+  screenY: number
   isTouch: boolean
   button: number
 }
@@ -16,6 +16,13 @@ export interface RealtimeInputSnapshot {
   pushDirection?: Direction
 }
 
+/**
+ * Normalizes raw keyboard, mouse, and touch input into gameplay intent.
+ *
+ * This module deliberately stops at "player intention". It does not mutate the
+ * simulation directly; `GameScene` forwards the resulting snapshot into the pure
+ * core step function.
+ */
 export class InputController {
   private pointerStart?: PointerSnapshot
   private pointerMoveDirection?: Direction
@@ -88,8 +95,8 @@ export class InputController {
         : pointer.wasTouch
 
       this.pointerStart = {
-        x: pointer.worldX,
-        y: pointer.worldY,
+        screenX: pointer.x,
+        screenY: pointer.y,
         isTouch,
         button
       }
@@ -114,8 +121,8 @@ export class InputController {
         return
       }
 
-      const deltaX = pointer.worldX - start.x
-      const deltaY = pointer.worldY - start.y
+      const deltaX = pointer.x - start.screenX
+      const deltaY = pointer.y - start.screenY
       const distance = Math.max(Math.abs(deltaX), Math.abs(deltaY))
 
       if (start.isTouch && distance >= swipeThreshold) {

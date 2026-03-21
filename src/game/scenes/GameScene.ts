@@ -1,14 +1,14 @@
 import Phaser from 'phaser'
 import level01 from '../data/levels/level01.json'
 import { createStageState, isGoal, stepStageState, type StageState } from '../core/StageState'
+import { playPushSfx } from '../audio/playPushSfx'
 import { Block } from '../entities/Block'
 import { Enemy } from '../entities/Enemy'
 import { Player } from '../entities/Player'
-import { playPushSfx } from '../audio/playPushSfx'
-import { GAME_HEIGHT, GAME_WIDTH } from '../config'
 import { InputController } from '../systems/input/InputController'
 import type { Direction, LevelData } from '../types/level'
 import { addPoints, directionVectors, samePoint } from '../utils/grid'
+import { getBoardViewportLayout } from '../utils/layout'
 
 interface UIState {
   levelName: string
@@ -19,10 +19,18 @@ interface UIState {
 }
 
 const levelData = level01 as LevelData
+const BOARD_FRAME_PADDING = 24
 
+/**
+ * Thin Phaser runtime scene responsible for:
+ * - building the authored board visuals
+ * - sampling normalized input
+ * - advancing the pure `StageState` simulation
+ * - fitting and centering the board inside the current browser viewport
+ */
 export class GameScene extends Phaser.Scene {
   private readonly level = levelData
-  private readonly boardOffset = { x: 0, y: 0 }
+  private readonly boardOffset = { x: BOARD_FRAME_PADDING, y: BOARD_FRAME_PADDING }
   private player!: Player
   private blocks = new Map<string, Block>()
   private enemies = new Map<string, Enemy>()
@@ -48,10 +56,15 @@ export class GameScene extends Phaser.Scene {
     this.createBoard()
     this.spawnActors()
     this.bindInputProviders()
+    this.applyResponsiveLayout(this.scale.width, this.scale.height)
     this.syncActors()
     this.emitUiState(this.state.message)
 
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.inputController.destroy())
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this)
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this)
+      this.inputController.destroy()
+    })
   }
 
   update(_: number, delta: number): void {
@@ -80,16 +93,37 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createBoard(): void {
-    const boardPixelWidth = this.level.width * this.level.tileSize
-    const boardPixelHeight = this.level.height * this.level.tileSize
-    this.boardOffset.x = (GAME_WIDTH - boardPixelWidth) / 2
-    this.boardOffset.y = (GAME_HEIGHT - boardPixelHeight) / 2 + 18
+    const boardPixelWidth = this.getBoardPixelWidth()
+    const boardPixelHeight = this.getBoardPixelHeight()
+    const boardCenterX = this.getBoardCenterX()
+    const boardCenterY = this.getBoardCenterY()
 
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 18, GAME_WIDTH, GAME_HEIGHT, 0x060d17, 1)
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 16, boardPixelWidth + 56, boardPixelHeight + 56, 0x0f1b2d, 0.95)
-      .setStrokeStyle(4, 0x38bdf8, 0.22)
+    this.add.rectangle(
+      boardCenterX,
+      boardCenterY,
+      boardPixelWidth + BOARD_FRAME_PADDING * 2,
+      boardPixelHeight + BOARD_FRAME_PADDING * 2,
+      0x0f1b2d,
+      0.96
+    ).setStrokeStyle(4, 0x38bdf8, 0.22)
 
-    this.statusPulse = this.add.rectangle(GAME_WIDTH / 2, this.boardOffset.y - 20, boardPixelWidth, 12, 0x38bdf8, 0.1)
+    this.add.rectangle(
+      boardCenterX,
+      boardCenterY,
+      boardPixelWidth + 10,
+      boardPixelHeight + 10,
+      0x091423,
+      1
+    ).setStrokeStyle(2, 0x1e293b, 0.85)
+
+    this.statusPulse = this.add.rectangle(
+      boardCenterX,
+      this.boardOffset.y + this.level.tileSize * 0.18,
+      Math.max(boardPixelWidth - 18, 16),
+      10,
+      0x38bdf8,
+      0.12
+    )
 
     for (let y = 0; y < this.level.height; y += 1) {
       for (let x = 0; x < this.level.width; x += 1) {
@@ -186,7 +220,7 @@ export class GameScene extends Phaser.Scene {
 
   private emitUiState(status: string): void {
     const payload: UIState = {
-      levelName: `${this.level.name}${isGoal(this.level, this.state.player.gridPosition) ? ' • Exit Ready' : ''}`,
+      levelName: `${this.level.name}${isGoal(this.level, this.state.player.gridPosition) ? ' - Exit Ready' : ''}`,
       enemiesRemaining: this.state.enemies.filter((enemy) => enemy.alive).length,
       objective: this.level.objective,
       status,
@@ -194,6 +228,40 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.game.events.emit('ui:update', payload)
+  }
+
+  private handleResize(gameSize: Phaser.Structs.Size): void {
+    this.applyResponsiveLayout(gameSize.width, gameSize.height)
+  }
+
+  private applyResponsiveLayout(viewportWidth: number, viewportHeight: number): void {
+    const camera = this.cameras.main
+    const layout = getBoardViewportLayout(
+      viewportWidth,
+      viewportHeight,
+      this.getBoardPixelWidth() + BOARD_FRAME_PADDING * 2,
+      this.getBoardPixelHeight() + BOARD_FRAME_PADDING * 2
+    )
+
+    camera.setSize(viewportWidth, viewportHeight)
+    camera.setZoom(layout.zoom)
+    camera.centerOn(this.getBoardCenterX(), this.getBoardCenterY())
+  }
+
+  private getBoardPixelWidth(): number {
+    return this.level.width * this.level.tileSize
+  }
+
+  private getBoardPixelHeight(): number {
+    return this.level.height * this.level.tileSize
+  }
+
+  private getBoardCenterX(): number {
+    return this.boardOffset.x + this.getBoardPixelWidth() / 2
+  }
+
+  private getBoardCenterY(): number {
+    return this.boardOffset.y + this.getBoardPixelHeight() / 2
   }
 
   private toWorld(point: { x: number; y: number }): [number, number] {
