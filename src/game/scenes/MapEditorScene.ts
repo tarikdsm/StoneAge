@@ -1,21 +1,27 @@
 import Phaser from 'phaser'
 import {
   MAP_MAX_SLOT,
-  createBrowserStorage,
+  MAX_MAP_FILE_BYTES,
+  PLAYABLE_GRID_SIZE,
+  buildMapSlotFileFromEditableLevel,
+  clearMapSlot,
   createEmptyEditableLevel,
-  deleteLevel,
-  editableLevelFromLevel,
+  createEmptyMapSlotFile,
+  editableLevelFromMapSlotFile,
   formatLevelLabel,
   formatLevelName,
   getFirstAvailableCustomSlot,
-  getLevel,
+  getMapSlotFile,
   listLevelSummaries,
+  parseMapSlotFileText,
+  publishEditableLevel,
+  publishMapSlotFile,
   sanitizeSlot,
-  saveEditableLevel,
-  validateEditableLevel,
-  PLAYABLE_GRID_SIZE
+  serializeMapSlotFile,
+  validateEditableLevel
 } from '../data/levelRepository'
 import type { EditableLevelData, EditorTool, LevelSummary } from '../types/editor'
+import type { MapSlotFile } from '../types/mapFile'
 import type { GridPoint } from '../types/level'
 import { samePoint } from '../utils/grid'
 import { clamp } from '../utils/layout'
@@ -40,14 +46,17 @@ const TOOL_LABELS: Record<EditorTool, string> = {
   erase: 'Eraser'
 }
 
+const GITHUB_TOKEN_SESSION_KEY = 'stoneage:github-token:session'
+
 /**
  * Browser-side map editor scene for 10x10 playable layouts.
  *
- * The scene edits a simplified authoring representation and relies on the
- * level repository to convert that representation into runtime `LevelData`.
+ * The editor now treats `public/maps/mapNN.json` as the canonical published
+ * source of truth. Uploads, saves, deletes, and downloads all operate on that
+ * slot-file format, while the gameplay runtime still consumes converted
+ * `LevelData`.
  */
 export class MapEditorScene extends Phaser.Scene {
-  private readonly storage = createBrowserStorage()
   private readonly sectionDividerColor = 0x38bdf8
   private background?: Phaser.GameObjects.Rectangle
   private headerPanel?: Phaser.GameObjects.Rectangle
@@ -79,6 +88,7 @@ export class MapEditorScene extends Phaser.Scene {
   private editorMode: 'new' | 'existing' = 'new'
   private listPage = 0
   private listPageSize = 8
+  private busy = false
   private gridCells: Phaser.GameObjects.Rectangle[][] = []
   private markerLayer?: Phaser.GameObjects.Container
   private backButton?: EditorButton
@@ -87,6 +97,8 @@ export class MapEditorScene extends Phaser.Scene {
   private nextPageButton?: EditorButton
   private saveButton?: EditorButton
   private deleteButton?: EditorButton
+  private downloadButton?: EditorButton
+  private uploadButton?: EditorButton
   private slotMinusButton?: EditorButton
   private slotPlusButton?: EditorButton
 
@@ -170,30 +182,37 @@ export class MapEditorScene extends Phaser.Scene {
     }).setOrigin(0.5)
 
     this.backButton = this.createButton('Back', () => this.scene.start('MenuScene'))
-    this.newButton = this.createButton('New Map', () => this.resetToNewMap('New blank 10x10 map ready.'))
+    this.newButton = this.createButton('New Map', () => { void this.resetToNewMap('New blank 10x10 map ready.') })
     this.previousPageButton = this.createButton('Prev', () => this.changePage(-1))
     this.nextPageButton = this.createButton('Next', () => this.changePage(1))
-    this.saveButton = this.createButton('Save Map', () => this.saveCurrentMap())
-    this.deleteButton = this.createButton('Delete Map', () => this.deleteCurrentMap())
+    this.saveButton = this.createButton('Save Map', () => { void this.saveCurrentMap() })
+    this.deleteButton = this.createButton('Delete Map', () => { void this.deleteCurrentMap() })
+    this.downloadButton = this.createButton('Download', () => this.downloadCurrentMap())
+    this.uploadButton = this.createButton('Upload', () => { void this.uploadMapFile() })
     this.slotMinusButton = this.createButton('-', () => this.adjustNewSlot(-1))
     this.slotPlusButton = this.createButton('+', () => this.adjustNewSlot(1))
 
     for (const tool of TOOL_ORDER) {
       this.toolButtons.set(tool, this.createButton(TOOL_LABELS[tool], () => {
+        if (this.busy) {
+          return
+        }
+
         this.selectedTool = tool
         this.updateButtonStates()
       }))
     }
 
     this.createGrid()
-    this.refreshMapSummaries()
-    this.resetToNewMap('New blank 10x10 map ready.')
     this.layoutScene(this.scale.width, this.scale.height)
+    this.setStatus('Loading published maps...')
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this)
     })
+
+    void this.initializePublishedMaps()
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
@@ -235,7 +254,7 @@ export class MapEditorScene extends Phaser.Scene {
     const rightSectionTop = contentTop + 44
     const hintSectionHeight = clamp(height * 0.12, 74, 96)
     const rightHintDividerY = rightSectionTop + hintSectionHeight
-    const actionSectionHeight = 182
+    const actionSectionHeight = 278
     const actionSectionTop = contentTop + contentHeight - actionSectionHeight
     const toolAreaTop = rightHintDividerY + 18
     const toolAreaBottom = actionSectionTop - 16
@@ -343,10 +362,17 @@ export class MapEditorScene extends Phaser.Scene {
 
     const slotButtonY = actionSectionTop + 52
     const slotButtonWidth = Math.max(34, (panelWidth - 92) / 2)
+    const saveY = slotButtonY + smallButtonHeight + 12
+    const deleteY = saveY + 48
+    const downloadY = deleteY + 46
+    const uploadY = downloadY + 46
+
     this.setButtonLayout(this.slotMinusButton, toolButtonX, slotButtonY, slotButtonWidth, smallButtonHeight, 18)
     this.setButtonLayout(this.slotPlusButton, width - padding - 14 - slotButtonWidth, slotButtonY, slotButtonWidth, smallButtonHeight, 18)
-    this.setButtonLayout(this.saveButton, toolButtonX, slotButtonY + smallButtonHeight + 12, toolButtonWidth, 40, clamp(width * 0.0115, 11, 14))
-    this.setButtonLayout(this.deleteButton, toolButtonX, slotButtonY + smallButtonHeight + 60, toolButtonWidth, 38, clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.saveButton, toolButtonX, saveY, toolButtonWidth, 40, clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.deleteButton, toolButtonX, deleteY, toolButtonWidth, 38, clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.downloadButton, toolButtonX, downloadY, toolButtonWidth, 38, clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.uploadButton, toolButtonX, uploadY, toolButtonWidth, 38, clamp(width * 0.0115, 11, 14))
 
     this.gridOrigin = {
       x: boardLeft,
@@ -375,7 +401,11 @@ export class MapEditorScene extends Phaser.Scene {
         const cell = this.add.rectangle(0, 0, 10, 10, 0x16243a, 1).setOrigin(0)
         cell.setStrokeStyle(1, 0x1e293b, 0.85)
         cell.setInteractive({ useHandCursor: true })
-        cell.on('pointerdown', () => this.handleGridClick({ x, y }))
+        cell.on('pointerdown', () => {
+          if (!this.busy) {
+            this.handleGridClick({ x, y })
+          }
+        })
         row.push(cell)
       }
       this.gridCells.push(row)
@@ -454,13 +484,25 @@ export class MapEditorScene extends Phaser.Scene {
     return this.add.rectangle(0, 0, 10, 2, this.sectionDividerColor, 0.28).setOrigin(0)
   }
 
-  private refreshMapSummaries(): void {
-    this.mapSummaries = listLevelSummaries(this.storage)
+  private async initializePublishedMaps(): Promise<void> {
+    this.setBusy(true, 'Loading published maps...')
+    try {
+      await this.refreshMapSummaries()
+      await this.resetToNewMap('Published map catalog loaded.')
+    } catch (error) {
+      this.setStatus(error instanceof Error ? error.message : 'Unable to load the map catalog.', true)
+    } finally {
+      this.setBusy(false)
+    }
+  }
+
+  private async refreshMapSummaries(): Promise<void> {
+    this.mapSummaries = await listLevelSummaries()
     this.listPage = Math.min(this.listPage, Math.max(0, this.getPageCount() - 1))
   }
 
-  private resetToNewMap(status: string): void {
-    const slot = getFirstAvailableCustomSlot(this.storage)
+  private async resetToNewMap(status: string): Promise<void> {
+    const slot = await getFirstAvailableCustomSlot()
     this.editorMode = 'new'
     this.editorState = createEmptyEditableLevel(slot)
     this.selectedTool = 'player'
@@ -468,15 +510,22 @@ export class MapEditorScene extends Phaser.Scene {
     this.layoutScene(this.scale.width, this.scale.height)
   }
 
-  private loadMap(slot: number, status = `${formatLevelLabel(slot)} loaded.`): void {
-    const level = getLevel(slot, this.storage)
-    if (!level) {
-      this.setStatus(`${formatLevelLabel(slot)} does not exist.`, true)
+  private async loadMap(slot: number, status = `${formatLevelLabel(slot)} loaded.`): Promise<void> {
+    const file = await getMapSlotFile(slot)
+    if (file.empty) {
+      this.setStatus(`${formatLevelLabel(slot)} is currently empty.`, true)
       return
     }
 
-    this.editorMode = 'existing'
-    this.editorState = editableLevelFromLevel(slot, level)
+    this.applyLoadedMapFile(file, status)
+  }
+
+  private applyLoadedMapFile(file: MapSlotFile, status: string): void {
+    this.editorMode = file.empty ? 'new' : 'existing'
+    this.editorState = editableLevelFromMapSlotFile(file)
+    if (file.empty) {
+      this.editorState.name = formatLevelName(file.slot)
+    }
     this.selectedTool = 'player'
     this.setStatus(status)
     this.layoutScene(this.scale.width, this.scale.height)
@@ -488,7 +537,7 @@ export class MapEditorScene extends Phaser.Scene {
   }
 
   private adjustNewSlot(delta: number): void {
-    if (this.editorMode !== 'new') {
+    if (this.editorMode !== 'new' || this.busy) {
       return
     }
 
@@ -497,10 +546,15 @@ export class MapEditorScene extends Phaser.Scene {
     this.renderEditor()
   }
 
-  private saveCurrentMap(): void {
+  private async saveCurrentMap(): Promise<void> {
     const errors = validateEditableLevel(this.editorState)
     if (errors.length > 0) {
       this.setStatus(errors[0] as string, true)
+      return
+    }
+
+    const token = await this.ensureGitHubToken('Saving a map to GitHub Pages requires write access to the repository.')
+    if (!token) {
       return
     }
 
@@ -510,24 +564,96 @@ export class MapEditorScene extends Phaser.Scene {
 
     this.editorState.slot = slot
     this.editorState.name = slot === 1 ? this.editorState.name : formatLevelName(slot)
-    saveEditableLevel(this.editorState, this.storage)
-    this.refreshMapSummaries()
-    this.loadMap(slot, `${formatLevelLabel(slot)} saved.`)
+
+    this.setBusy(true, `Publishing ${formatLevelLabel(slot)} to GitHub...`)
+    try {
+      const publishedFile = await publishEditableLevel(this.editorState, token)
+      await this.refreshMapSummaries()
+      this.applyLoadedMapFile(publishedFile, `${formatLevelLabel(slot)} published. GitHub Pages may take a minute to refresh.`)
+    } catch (error) {
+      this.handleGitHubError(error, `Unable to publish ${formatLevelLabel(slot)}.`)
+    } finally {
+      this.setBusy(false)
+    }
   }
 
-  private deleteCurrentMap(): void {
+  private async deleteCurrentMap(): Promise<void> {
     if (this.editorState.slot === 1) {
-      this.setStatus('Map 01 can be modified, but never deleted.', true)
+      this.setStatus('Map 01 can be modified, but never cleared.', true)
       return
     }
 
-    if (!deleteLevel(this.editorState.slot, this.storage)) {
-      this.setStatus('Only saved maps can be deleted.', true)
+    const token = await this.ensureGitHubToken('Clearing a published slot requires write access to the GitHub repository.')
+    if (!token) {
       return
     }
 
-    this.refreshMapSummaries()
-    this.resetToNewMap(`${formatLevelLabel(this.editorState.slot)} deleted. New blank map ready.`)
+    this.setBusy(true, `Clearing ${formatLevelLabel(this.editorState.slot)} on GitHub...`)
+    try {
+      await clearMapSlot(this.editorState.slot, token)
+      await this.refreshMapSummaries()
+      await this.resetToNewMap(`${formatLevelLabel(this.editorState.slot)} cleared. GitHub Pages may take a minute to refresh.`)
+    } catch (error) {
+      this.handleGitHubError(error, `Unable to clear ${formatLevelLabel(this.editorState.slot)}.`)
+    } finally {
+      this.setBusy(false)
+    }
+  }
+
+  private downloadCurrentMap(): void {
+    try {
+      const hasPlacedAnything = Boolean(this.editorState.playerSpawn)
+        || Boolean(this.editorState.exit)
+        || this.editorState.blocks.length > 0
+        || this.editorState.columns.length > 0
+        || this.editorState.enemies.length > 0
+
+      const mapFile = hasPlacedAnything
+        ? buildMapSlotFileFromEditableLevel(this.editorState)
+        : createEmptyMapSlotFile(this.editorState.slot)
+
+      this.triggerJsonDownload(serializeMapSlotFile(mapFile), `map${String(mapFile.slot).padStart(2, '0')}.json`)
+      this.setStatus(`${formatLevelLabel(mapFile.slot)} downloaded.`)
+    } catch (error) {
+      this.setStatus(error instanceof Error ? error.message : 'Unable to download the current map.', true)
+    }
+  }
+
+  private async uploadMapFile(): Promise<void> {
+    const file = await this.pickJsonFile()
+    if (!file) {
+      return
+    }
+
+    if (file.size > MAX_MAP_FILE_BYTES) {
+      this.setStatus(`Map files must stay under ${MAX_MAP_FILE_BYTES / 1024} KB.`, true)
+      return
+    }
+
+    const parsed = parseMapSlotFileText(await file.text())
+    if (!parsed.value) {
+      this.setStatus(parsed.errors[0] as string, true)
+      return
+    }
+
+    const token = await this.ensureGitHubToken('Uploading a map file requires write access to the GitHub repository.')
+    if (!token) {
+      return
+    }
+
+    this.setBusy(true, `Uploading ${formatLevelLabel(parsed.value.slot)} to GitHub...`)
+    try {
+      const published = await publishMapSlotFile(parsed.value, token)
+      await this.refreshMapSummaries()
+      this.applyLoadedMapFile(
+        published,
+        `${formatLevelLabel(published.slot)} uploaded and published. GitHub Pages may take a minute to refresh.`
+      )
+    } catch (error) {
+      this.handleGitHubError(error, 'Unable to upload the selected map file.')
+    } finally {
+      this.setBusy(false)
+    }
   }
 
   private renderEditor(): void {
@@ -546,7 +672,7 @@ export class MapEditorScene extends Phaser.Scene {
     this.slotText?.setText(
       this.editorMode === 'new'
         ? `Save Slot: ${String(this.editorState.slot).padStart(2, '0')}`
-        : `Fixed Slot: ${String(this.editorState.slot).padStart(2, '0')}`
+        : `Published Slot: ${String(this.editorState.slot).padStart(2, '0')}`
     )
     this.toolHintText?.setText(
       [
@@ -661,7 +787,7 @@ export class MapEditorScene extends Phaser.Scene {
     for (const summary of visibleSummaries) {
       const button = this.createButton(
         formatLevelLabel(summary.slot),
-        () => this.loadMap(summary.slot)
+        () => { void this.loadMap(summary.slot) }
       )
       this.mapButtons.push(button)
     }
@@ -670,22 +796,26 @@ export class MapEditorScene extends Phaser.Scene {
   }
 
   private updateButtonStates(): void {
-    this.setButtonState(this.newButton, { active: this.editorMode === 'new' })
-    this.setButtonState(this.previousPageButton, { disabled: this.listPage <= 0 })
-    this.setButtonState(this.nextPageButton, { disabled: this.listPage >= this.getPageCount() - 1 })
-    this.setButtonState(this.slotMinusButton, { disabled: this.editorMode !== 'new' || this.editorState.slot <= 2 })
-    this.setButtonState(this.slotPlusButton, { disabled: this.editorMode !== 'new' || this.editorState.slot >= MAP_MAX_SLOT })
-    this.setButtonState(this.deleteButton, { disabled: this.editorState.slot === 1 || this.editorMode !== 'existing' })
+    this.setButtonState(this.newButton, { active: this.editorMode === 'new', disabled: this.busy })
+    this.setButtonState(this.previousPageButton, { disabled: this.busy || this.listPage <= 0 })
+    this.setButtonState(this.nextPageButton, { disabled: this.busy || this.listPage >= this.getPageCount() - 1 })
+    this.setButtonState(this.slotMinusButton, { disabled: this.busy || this.editorMode !== 'new' || this.editorState.slot <= 2 })
+    this.setButtonState(this.slotPlusButton, { disabled: this.busy || this.editorMode !== 'new' || this.editorState.slot >= MAP_MAX_SLOT })
+    this.setButtonState(this.saveButton, { disabled: this.busy })
+    this.setButtonState(this.downloadButton, { disabled: this.busy })
+    this.setButtonState(this.uploadButton, { disabled: this.busy })
+    this.setButtonState(this.deleteButton, { disabled: this.busy || this.editorState.slot === 1 || this.editorMode !== 'existing' })
 
     for (const tool of TOOL_ORDER) {
-      this.setButtonState(this.toolButtons.get(tool), { active: this.selectedTool === tool })
+      this.setButtonState(this.toolButtons.get(tool), { active: this.selectedTool === tool, disabled: this.busy })
     }
 
     const start = this.listPage * this.listPageSize
     const visibleSummaries = this.mapSummaries.slice(start, start + this.listPageSize)
     visibleSummaries.forEach((summary, index) => {
       this.setButtonState(this.mapButtons[index], {
-        active: this.editorMode === 'existing' && summary.slot === this.editorState.slot
+        active: this.editorMode === 'existing' && summary.slot === this.editorState.slot,
+        disabled: this.busy
       })
       this.mapButtons[index]?.label.setText(formatLevelLabel(summary.slot))
     })
@@ -782,7 +912,103 @@ export class MapEditorScene extends Phaser.Scene {
     this.statusText?.setText(message)
   }
 
+  private setBusy(nextBusy: boolean, message?: string): void {
+    this.busy = nextBusy
+    if (message) {
+      this.setStatus(message)
+    }
+    this.updateButtonStates()
+  }
+
   private getPageCount(): number {
     return Math.max(1, Math.ceil(this.mapSummaries.length / this.listPageSize))
+  }
+
+  private async ensureGitHubToken(reason: string): Promise<string | undefined> {
+    const storedToken = this.readStoredGitHubToken()
+    if (storedToken) {
+      return storedToken
+    }
+
+    if (typeof window === 'undefined') {
+      this.setStatus('GitHub publishing requires a browser environment.', true)
+      return undefined
+    }
+
+    const token = window.prompt(
+      `${reason}\n\nPaste a GitHub Personal Access Token with contents write permission for tarikdsm/StoneAge.\nThe token will be kept only in this browser tab.`,
+      ''
+    )?.trim()
+
+    if (!token) {
+      this.setStatus('Publishing was canceled because no GitHub token was provided.', true)
+      return undefined
+    }
+
+    window.sessionStorage.setItem(GITHUB_TOKEN_SESSION_KEY, token)
+    return token
+  }
+
+  private readStoredGitHubToken(): string | undefined {
+    try {
+      if (typeof window === 'undefined') {
+        return undefined
+      }
+
+      const token = window.sessionStorage.getItem(GITHUB_TOKEN_SESSION_KEY)?.trim()
+      return token || undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  private clearStoredGitHubToken(): void {
+    try {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(GITHUB_TOKEN_SESSION_KEY)
+      }
+    } catch {
+      // Ignore storage cleanup failures.
+    }
+  }
+
+  private handleGitHubError(error: unknown, fallbackMessage: string): void {
+    const message = error instanceof Error ? error.message : fallbackMessage
+    if (message.includes('GitHub token rejected') || message.includes('GitHub denied access')) {
+      this.clearStoredGitHubToken()
+    }
+    this.setStatus(message || fallbackMessage, true)
+  }
+
+  private async pickJsonFile(): Promise<File | undefined> {
+    if (typeof document === 'undefined') {
+      this.setStatus('File upload is only available in a browser.', true)
+      return undefined
+    }
+
+    return await new Promise<File | undefined>((resolve) => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = '.json,application/json'
+      input.addEventListener('change', () => {
+        resolve(input.files?.[0] ?? undefined)
+      }, { once: true })
+      input.click()
+    })
+  }
+
+  private triggerJsonDownload(contents: string, fileName: string): void {
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+      this.setStatus('Downloads are only available in a browser.', true)
+      return
+    }
+
+    const blob = new Blob([contents], { type: 'application/json;charset=utf-8' })
+    const url = window.URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = fileName
+    anchor.click()
+    window.URL.revokeObjectURL(url)
   }
 }

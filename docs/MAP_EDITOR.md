@@ -2,13 +2,13 @@
 
 ## Purpose
 
-The built-in map editor lets the player manage campaign maps directly in the
-browser without any backend service.
+The built-in map editor lets the player manage campaign maps directly from the
+game while keeping the project compatible with GitHub Pages.
 
 It is intended to stay:
 
-- static-hosting friendly
-- easy to reason about
+- static-hosting friendly for reads
+- explicit and testable for map conversion/validation
 - compatible with the existing real-time gameplay core
 
 ## Entry point
@@ -27,7 +27,7 @@ The editor is organized into three areas:
 - a separate counts/status block for Player, Exit, Blocks, Columns, and NPCs
 - `New Map` action in its own section
 - dividers separating summary, counts, `New Map`, and `Maps`
-- list of existing maps
+- list of published non-empty maps
 - pagination controls for the map list when more than one page exists
 
 Clicking a listed map loads it for editing.
@@ -41,12 +41,14 @@ Clicking a listed map loads it for editing.
 ### Right panel
 
 - selected-tool hint text
-- dividers separating hint, palette, and save/action areas
+- dividers separating hint, palette, and action areas
 - placement tools
 - save-slot label positioned above the save-slot controls
 - save-slot controls for new maps
-- save action
-- delete action
+- `Save Map`
+- `Delete Map`
+- `Download`
+- `Upload`
 - placement hints and validation feedback
 
 ## Tools
@@ -75,17 +77,17 @@ Current palette options:
 - Placing a different tool on an occupied tile replaces the old occupant.
 - The **Eraser** removes the current occupant without placing a replacement.
 
-## Save and delete rules
+## Save, clear, upload, and download rules
 
 ### New maps
 
 - start blank
 - use a chosen slot from **02** to **99**
-- save into browser storage
+- publish into the corresponding `public/maps/mapNN.json`
 
 ### Existing maps
 
-- load from the left-side map list
+- load from the left-side published map list
 - save back into their current slot
 
 ### Save validation
@@ -98,49 +100,88 @@ Current palette options:
 ### Slot restrictions
 
 - **Map 01**
-  Can be modified, never deleted.
+  Can be modified, never cleared.
 - **Maps 02-99**
-  Can be modified or deleted.
+  Can be modified, uploaded into, downloaded from, or cleared.
+
+### Download
+
+- exports the current slot as a JSON file
+- uses the canonical `MapSlotFile` format
+- lets you keep or share a copy of the exact published slot content
+
+### Upload
+
+- opens a local `.json` file picker
+- rejects files that are too large
+- parses JSON safely
+- validates the exact slot-file schema before publishing
+- writes the uploaded map back to the corresponding `mapNN.json` after
+  validation succeeds
+
+## GitHub publishing requirement
+
+Publishing actions require a GitHub Personal Access Token with permission to
+write repository contents for `tarikdsm/StoneAge`.
+
+That applies to:
+
+- `Save Map`
+- `Delete Map`
+- `Upload`
+
+Token handling rules:
+
+- the editor asks for the token only when a publish action is attempted
+- the token is stored only in `sessionStorage`
+- the token lasts only for the current browser tab/session
+- if GitHub rejects the token, the editor clears the stored token and asks
+  again next time
 
 ## Campaign integration
 
 - The game always starts from **Map 01**
-- After clearing a stage, the campaign moves to the next available map slot
-- Saved editor maps become part of that progression automatically
+- After clearing a stage, the campaign moves to the next available non-empty
+  map slot
+- Published editor maps become part of that progression automatically
 
 This means the editor is not a separate sandbox. It feeds the same campaign
 sequence used by the game.
 
-## Persistence
+## Persistence model
 
-- Maps are stored via browser `localStorage`
-- No server or backend is required
-- Maps are local to the browser profile/device
+- Canonical maps live in `public/maps/`
+- GitHub Pages serves those JSON files to the game
+- Publishing writes commits to the GitHub repository through the Contents API
+- the Pages workflow redeploys the site after the push to `main`
+- published changes may take a short time to appear on the live site
 
 ## Runtime conversion
 
 The editor works on a 10x10 playable area, but gameplay still uses the authored
 runtime board format with border walls.
 
-On save:
+On save or upload publish:
 
 - the 10x10 playable grid is converted to runtime `LevelData`
 - a 1-tile wall border is added
 - the resulting runtime board becomes `12x12`
+- the runtime level is wrapped into a published `MapSlotFile`
 
 ## Current limitations
 
-- map names and objective text are currently generated/managed automatically
-- there is no import/export flow yet
-- persistence is local to the browser only
+- publishing from the hosted site requires a GitHub token with write access
+- GitHub Pages refresh is not instantaneous after a publish
+- map names and objective text are still mostly generated automatically
 - only the current set of placeable items is supported
 
 ## Extension guidance
 
 When extending the editor:
 
-1. update `src/game/types/editor.ts`
-2. update conversion/persistence logic in `src/game/data/levelRepository.ts`
+1. update `src/game/types/editor.ts` or `src/game/types/mapFile.ts`
+2. update conversion/validation/publication logic in
+   `src/game/data/levelRepository.ts`
 3. update `src/game/scenes/MapEditorScene.ts`
 4. add or update pure tests
 5. update docs

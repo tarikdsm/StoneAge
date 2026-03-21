@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { createBrowserStorage, formatLevelLabel, getLevel, getNextLevelSlot } from '../data/levelRepository'
+import { formatLevelLabel, getLevel, getNextLevelSlot } from '../data/levelRepository'
 import { createStageState, isGoal, stepStageState, type StageState } from '../core/StageState'
 import { playPushSfx } from '../audio/playPushSfx'
 import { Block } from '../entities/Block'
@@ -35,7 +35,6 @@ const PLAYER_CAUGHT_ANIMATION_MS = 700
  * - loading campaign levels through the browser-friendly level repository
  */
 export class GameScene extends Phaser.Scene {
-  private readonly storage = createBrowserStorage()
   private readonly boardOffset = { x: BOARD_FRAME_PADDING, y: BOARD_FRAME_PADDING }
   private level!: LevelData
   private levelSlot = 1
@@ -52,6 +51,8 @@ export class GameScene extends Phaser.Scene {
   private pendingAdvance?: Phaser.Time.TimerEvent
   private playerCaughtAnimationStarted = false
   private continueLockedUntilMs = 0
+  private loadingText?: Phaser.GameObjects.Text
+  private ready = false
 
   constructor() {
     super('GameScene')
@@ -66,35 +67,33 @@ export class GameScene extends Phaser.Scene {
     this.playerCaughtAnimationStarted = false
     this.continueLockedUntilMs = 0
     this.lastDirection = 'right'
-    const resolved = this.resolveLevel(data.levelSlot ?? 1)
-    this.levelSlot = resolved.slot
-    this.level = resolved.level
-    this.state = createStageState(this.level)
-    this.inputController = new InputController(this, this.level.tileSize)
-
-    if (!this.scene.isActive('UIScene')) {
-      this.scene.launch('UIScene')
-    }
+    this.ready = false
+    this.loadingText = this.add.text(this.scale.width / 2, this.scale.height / 2, 'Loading map...', {
+      fontFamily: 'Arial',
+      fontSize: '22px',
+      color: '#e2e8f0',
+      fontStyle: 'bold',
+      align: 'center'
+    }).setOrigin(0.5)
 
     this.enterKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER)
     this.spaceKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-
-    this.createBoard()
-    this.spawnActors()
-    this.bindInputProviders()
-    this.applyResponsiveLayout(this.scale.width, this.scale.height)
-    this.syncActors()
-    this.emitUiState(this.state.message)
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this)
       this.pendingAdvance?.remove(false)
-      this.inputController.destroy()
+      this.inputController?.destroy()
     })
+
+    void this.initializeScene(data)
   }
 
   update(_: number, delta: number): void {
+    if (!this.ready) {
+      return
+    }
+
     if (this.state.status !== 'playing') {
       this.emitUiState(this.pendingStatusMessage ?? this.state.message)
 
@@ -118,7 +117,7 @@ export class GameScene extends Phaser.Scene {
 
     const outcome = stepStageState(this.level, this.state, input, delta)
     if (outcome.statusChanged) {
-      this.handleStatusChange()
+      void this.handleStatusChange()
     }
 
     this.syncActors()
@@ -284,6 +283,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
+    if (!this.ready) {
+      this.loadingText?.setPosition(gameSize.width / 2, gameSize.height / 2)
+      return
+    }
+
     this.applyResponsiveLayout(gameSize.width, gameSize.height)
   }
 
@@ -301,7 +305,7 @@ export class GameScene extends Phaser.Scene {
     camera.centerOn(this.getBoardCenterX(), this.getBoardCenterY())
   }
 
-  private handleStatusChange(): void {
+  private async handleStatusChange(): Promise<void> {
     if (this.state.status === 'lost') {
       this.pendingStatusMessage = undefined
       this.continueLockedUntilMs = this.time.now + PLAYER_CAUGHT_ANIMATION_MS
@@ -313,7 +317,7 @@ export class GameScene extends Phaser.Scene {
       return
     }
 
-    const nextSlot = getNextLevelSlot(this.levelSlot, this.storage)
+    const nextSlot = await getNextLevelSlot(this.levelSlot)
     if (!nextSlot) {
       this.pendingStatusMessage = 'Campaign clear! Tap, click, Enter, or Space to return to the menu.'
       return
@@ -332,15 +336,15 @@ export class GameScene extends Phaser.Scene {
       || this.input.activePointer.rightButtonDown()
   }
 
-  private resolveLevel(slot: number): { slot: number; level: LevelData } {
-    const resolvedLevel = getLevel(slot, this.storage)
+  private async resolveLevel(slot: number): Promise<{ slot: number; level: LevelData }> {
+    const resolvedLevel = await getLevel(slot)
     if (resolvedLevel) {
       return { slot, level: resolvedLevel }
     }
 
     return {
       slot: 1,
-      level: getLevel(1, this.storage) as LevelData
+      level: await getLevel(1) as LevelData
     }
   }
 
@@ -405,5 +409,35 @@ export class GameScene extends Phaser.Scene {
       this.boardOffset.x + point.x * this.level.tileSize + this.level.tileSize / 2,
       this.boardOffset.y + point.y * this.level.tileSize + this.level.tileSize / 2
     ]
+  }
+
+  private async initializeScene(data: GameSceneData): Promise<void> {
+    try {
+      const resolved = await this.resolveLevel(data.levelSlot ?? 1)
+      this.levelSlot = resolved.slot
+      this.level = resolved.level
+      this.state = createStageState(this.level)
+      this.inputController = new InputController(this, this.level.tileSize)
+
+      if (!this.scene.isActive('UIScene')) {
+        this.scene.launch('UIScene')
+      }
+
+      this.createBoard()
+      this.spawnActors()
+      this.bindInputProviders()
+      this.applyResponsiveLayout(this.scale.width, this.scale.height)
+      this.syncActors()
+      this.emitUiState(this.state.message)
+      this.ready = true
+      this.loadingText?.destroy()
+      this.loadingText = undefined
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load the selected map.'
+      this.loadingText
+        ?.setText(message)
+        .setColor('#fda4af')
+        .setWordWrapWidth(Math.max(this.scale.width * 0.7, 220))
+    }
   }
 }

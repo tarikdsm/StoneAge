@@ -1,36 +1,62 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AUTHORED_BOARD_SIZE,
   buildLevelFromEditableLevel,
+  buildMapSlotFileFromEditableLevel,
   createEmptyEditableLevel,
-  deleteLevel,
+  createEmptyMapSlotFile,
   editableLevelFromLevel,
   getFirstAvailableCustomSlot,
-  getLevel,
   getNextLevelSlot,
   listLevelSummaries,
-  saveEditableLevel,
-  validateEditableLevel
+  parseMapSlotFileText,
+  serializeMapSlotFile,
+  validateEditableLevel,
+  validateMapSlotFileData
 } from '../data/levelRepository'
+import type { EditableLevelData } from '../types/editor'
 import type { LevelData } from '../types/level'
+import type { MapSlotFile } from '../types/mapFile'
 
-function createMemoryStorage() {
-  const values = new Map<string, string>()
+function createPublishedMap(slot: number, overrides: Partial<EditableLevelData> = {}): MapSlotFile {
+  return buildMapSlotFileFromEditableLevel({
+    ...createEmptyEditableLevel(slot),
+    playerSpawn: { x: 1, y: 1 },
+    exit: { x: 8, y: 8 },
+    ...overrides
+  })
+}
 
-  return {
-    getItem(key: string) {
-      return values.get(key) ?? null
-    },
-    setItem(key: string, value: string) {
-      values.set(key, value)
-    },
-    removeItem(key: string) {
-      values.delete(key)
+function createFetchStub(overrides: Map<number, MapSlotFile>) {
+  return vi.fn(async (input: string | URL | Request) => {
+    const url = typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url
+    const match = url.match(/map(\d{2})\.json/i)
+
+    if (!match) {
+      return new Response('Not found', { status: 404 })
     }
-  }
+
+    const slot = Number(match[1])
+    const file = overrides.get(slot) ?? (slot === 1 ? createPublishedMap(1) : createEmptyMapSlotFile(slot))
+    return new Response(JSON.stringify(file), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+  })
 }
 
 describe('levelRepository', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
   it('builds authored level data from the editor-friendly 10x10 layout', () => {
     const level = buildLevelFromEditableLevel({
       slot: 2,
@@ -78,32 +104,57 @@ describe('levelRepository', () => {
     expect(editable.columns).toEqual([{ x: 5, y: 6 }])
   })
 
-  it('persists custom maps, keeps map 01 undeletable, and finds the next playable slot', () => {
-    const storage = createMemoryStorage()
-    const customMap02 = {
-      ...createEmptyEditableLevel(2),
-      playerSpawn: { x: 1, y: 1 },
-      exit: { x: 8, y: 8 },
-      enemies: [{ x: 4, y: 4 }]
-    }
-    const customMap05 = {
-      ...createEmptyEditableLevel(5),
-      playerSpawn: { x: 2, y: 2 },
-      exit: { x: 7, y: 7 },
-      blocks: [{ x: 3, y: 3 }]
-    }
+  it('serializes and parses published map slot files safely', () => {
+    const file = createPublishedMap(7, {
+      blocks: [{ x: 3, y: 3 }],
+      columns: [{ x: 5, y: 5 }],
+      enemies: [{ x: 7, y: 2 }]
+    })
 
-    saveEditableLevel(customMap02, storage)
-    saveEditableLevel(customMap05, storage)
+    const serialized = serializeMapSlotFile(file)
+    const parsed = parseMapSlotFileText(serialized)
 
-    expect(getLevel(2, storage)?.name).toBe('Ice Cavern 02')
-    expect(listLevelSummaries(storage).map((summary) => summary.slot)).toEqual([1, 2, 5])
-    expect(getNextLevelSlot(1, storage)).toBe(2)
-    expect(getNextLevelSlot(2, storage)).toBe(5)
-    expect(getFirstAvailableCustomSlot(storage)).toBe(3)
-    expect(deleteLevel(1, storage)).toBe(false)
-    expect(deleteLevel(5, storage)).toBe(true)
-    expect(listLevelSummaries(storage).map((summary) => summary.slot)).toEqual([1, 2])
+    expect(parsed.errors).toEqual([])
+    expect(parsed.value).toEqual(file)
+  })
+
+  it('rejects malformed slot files with unexpected fields or invalid slot content', () => {
+    const extraFieldResult = validateMapSlotFileData({
+      type: 'stoneage-map-slot',
+      version: 1,
+      slot: 2,
+      empty: true,
+      injected: 'nope'
+    })
+    expect(extraFieldResult.value).toBeUndefined()
+    expect(extraFieldResult.errors[0]).toContain('expected slot-file fields')
+
+    const emptyMap01Result = validateMapSlotFileData({
+      type: 'stoneage-map-slot',
+      version: 1,
+      slot: 1,
+      empty: true
+    })
+    expect(emptyMap01Result.value).toBeUndefined()
+    expect(emptyMap01Result.errors).toContain('Map 01 cannot be an empty slot.')
+
+    const invalidJsonResult = parseMapSlotFileText('{ not-json }')
+    expect(invalidJsonResult.value).toBeUndefined()
+    expect(invalidJsonResult.errors).toEqual(['The uploaded file is not valid JSON.'])
+  })
+
+  it('loads published slots, lists non-empty maps, and finds the next available campaign slot', async () => {
+    vi.stubGlobal('fetch', createFetchStub(new Map([
+      [2, createPublishedMap(2, { enemies: [{ x: 4, y: 4 }] })],
+      [5, createPublishedMap(5, { blocks: [{ x: 3, y: 3 }] })]
+    ])))
+
+    const summaries = await listLevelSummaries(true)
+    expect(summaries.map((summary) => summary.slot)).toEqual([1, 2, 5])
+    expect(summaries.map((summary) => summary.published)).toEqual([true, true, true])
+    expect(await getNextLevelSlot(1, true)).toBe(2)
+    expect(await getNextLevelSlot(2, true)).toBe(5)
+    expect(await getFirstAvailableCustomSlot(true)).toBe(3)
   })
 
   it('requires both a player start and an exit before a map can be saved', () => {

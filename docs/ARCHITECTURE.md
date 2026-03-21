@@ -7,20 +7,19 @@ The project is organized around a few stable rules:
 - gameplay rules remain pure and Phaser-free
 - scenes coordinate runtime and presentation without reimplementing rules
 - input stays normalized in a separate layer
-- default level content remains JSON-authored
-- browser persistence stays static-hosting friendly
-- editor and campaign logic share the same level repository instead of drifting
-  apart
+- published level content remains JSON-authored
+- map-slot persistence stays compatible with GitHub Pages
+- editor, campaign, upload, and download all share one repository module
 
 ## High-level runtime flow
 
 1. `BootScene` loads assets.
 2. `MenuScene` lets the player choose `Play` or `Generate Maps`.
-3. `GameScene` loads a map slot from the level repository, steps the pure
-   simulation, and syncs visual actors.
+3. `GameScene` loads a published map slot from the level repository, steps the
+   pure simulation, and syncs visual actors.
 4. `UIScene` renders gameplay HUD payloads emitted by `GameScene`.
-5. `MapEditorScene` edits 10x10 playable layouts and saves them back through the
-   same level repository used by the campaign.
+5. `MapEditorScene` edits 10x10 playable layouts and publishes them back
+   through the same level repository used by the campaign.
 
 ## Subsystem boundaries
 
@@ -29,8 +28,8 @@ The project is organized around a few stable rules:
 Pure gameplay logic lives here.
 
 - `StageState.ts` is the authoritative real-time simulation model.
-- It owns movement, pushing, crush logic, enemy pursuit, and win/lose state.
-- It also owns non-visual block-destruction rules for jammed blocks.
+- It owns movement, pushing, crush logic, enemy pursuit, win/lose state, and
+  jammed-block destruction.
 - It has no Phaser dependency.
 - It is advanced only through `stepStageState(level, state, input, deltaMs)`.
 
@@ -41,9 +40,10 @@ If a behavior can be tested without rendering, it belongs here first.
 Scenes own runtime orchestration and presentation.
 
 - `MenuScene` is the player-facing hub.
-- `GameScene` coordinates loaded level content, input snapshots, pure simulation
-  stepping, auto-progression, and actor sync.
-- `MapEditorScene` coordinates editor UI and authoring interactions.
+- `GameScene` coordinates loaded level content, input snapshots, pure
+  simulation stepping, campaign auto-progression, and actor sync.
+- `MapEditorScene` coordinates editor UI, upload/download actions, and
+  publishing flow.
 - `UIScene` renders HUD overlays for the gameplay scene only, including the
   always-available return-to-menu control.
 
@@ -54,15 +54,18 @@ repository.
 
 Gameplay content and repository logic live here.
 
-- `src/game/data/levels/*.json` contains bundled default content.
+- `public/maps/map01.json` through `public/maps/map99.json` are the canonical
+  published map-slot files.
 - `levelRepository.ts` is the authoritative bridge between:
-  - bundled default levels
-  - browser-saved custom levels
-  - campaign slot ordering
+  - published slot files fetched from the static site
+  - strict slot-file JSON validation
   - editor-friendly 10x10 authoring data
   - runtime `LevelData`
+  - campaign slot ordering
+  - GitHub repository publication through the Contents API
 
-This keeps map loading, saving, and progression in one place.
+This keeps map loading, saving, uploading, downloading, and progression in one
+place.
 
 ### `src/game/systems/input`
 
@@ -87,17 +90,18 @@ Cross-module contracts live here.
 
 - `level.ts` defines runtime level schema and gameplay-facing types
 - `editor.ts` defines editor-facing 10x10 authoring contracts
+- `mapFile.ts` defines the canonical published slot-file schema
 
 ## State ownership and data flow
 
 ### Campaign play
 
-- `GameScene` asks the level repository for a level slot
-- the repository returns either a browser-saved override or bundled default
-  content
+- `GameScene` asks the level repository for a map slot
+- the repository fetches `public/maps/mapNN.json`
+- if the slot is non-empty, the repository returns runtime `LevelData`
 - `GameScene` creates a `StageState` from that `LevelData`
 - `InputController` creates a normalized input snapshot every frame
-- `stepStageState(...)` mutates the pure simulation state
+- `stepStageState(...)` advances the pure simulation state
 - `GameScene` mirrors `worldPosition` into Phaser actors
 - `UIScene` renders HUD state from scene events
 
@@ -106,20 +110,22 @@ Cross-module contracts live here.
 - `MapEditorScene` works with `EditableLevelData`, a 10x10 playable-area model
 - saving routes through `levelRepository.ts`
 - the repository converts editor data into authored runtime `LevelData`
-- saved custom maps land in browser `localStorage`
-- the campaign then loads those same saved maps by slot number
-- editor-side validation prevents saving maps that are missing the required
-  Player start or Exit
+- the repository wraps that level into a `MapSlotFile`
+- publishing writes the corresponding `public/maps/mapNN.json` through the
+  GitHub Contents API
+- upload parses and validates a JSON slot file before any publish occurs
+- download exports the current slot-file representation
 
 ## Campaign progression model
 
 - The campaign always starts at **Map 01**.
-- After a stage is won, `GameScene` asks the repository for the next available
+- After a stage is won, `GameScene` asks the repository for the next non-empty
   slot number greater than the current one.
 - If a next slot exists, the game auto-advances after a short delay.
 - If there is no next slot, the campaign ends and returns to the menu on input.
 
-This design supports sparse map numbering while keeping progression logic simple.
+This design supports sparse map numbering while keeping progression logic
+simple.
 
 ## Responsive layout model
 
@@ -133,23 +139,30 @@ Responsive layout is a render concern, not a gameplay concern.
 
 Logical grid coordinates never change in response to viewport size changes.
 
-## Persistence model
+## Persistence and publication model
 
-- Bundled level content ships with the repo
-- Custom/edited maps persist via browser `localStorage`
-- This keeps the project compatible with GitHub Pages and other static hosts
-- There is currently no server-side persistence or sync layer
+- Canonical published content lives in `public/maps/`
+- The deployed game reads those JSON files directly from GitHub Pages
+- Publishing from the editor requires a GitHub Personal Access Token with
+  repository contents write permission
+- The browser stores that token only in `sessionStorage` for the current tab
+- Writing a slot creates a commit on `main`
+- The existing Pages workflow redeploys the site after that push
+
+Inference from the implementation: GitHub Pages remains the static host, while
+the GitHub Contents API provides the authenticated write path needed to keep the
+published map files persistent.
 
 ## Testing strategy
 
 Automated tests should focus on pure behavior:
 
 - gameplay rules in `core`
-- repository conversion/progression logic in `data`
+- slot conversion/validation/progression logic in `data`
 - layout math in `utils`
 
-Phaser scenes should stay thin enough that most correctness remains verifiable by
-pure tests.
+Phaser scenes should stay thin enough that most correctness remains verifiable
+by pure tests.
 
 ## Extension guidance
 
@@ -163,18 +176,19 @@ Preferred order:
 4. update scene feedback
 5. update docs
 
-### Adding a new editor feature
+### Adding a new editor or persistence feature
 
 Preferred order:
 
-1. update `src/game/types/editor.ts`
-2. update `levelRepository.ts` if persistence or conversion rules change
+1. update `src/game/types/editor.ts` or `src/game/types/mapFile.ts`
+2. update `levelRepository.ts`
 3. update `MapEditorScene.ts`
 4. add tests for pure repository behavior
 5. update docs
 
-### Adding more default levels
+### Adding more published levels
 
 - keep the content JSON-authored
-- register them through the level repository
-- document numbering/progression expectations if the campaign structure changes
+- add or update the corresponding `public/maps/mapNN.json`
+- preserve slot numbering expectations for campaign progression
+- document any campaign-order changes if the slot strategy changes

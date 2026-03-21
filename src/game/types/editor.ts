@@ -25,5 +25,5 @@ export interface LevelSummary {
   slot: number
   name: string
   deletable: boolean
-  existsInStorage: boolean
+  published: boolean
 }

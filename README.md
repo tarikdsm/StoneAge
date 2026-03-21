@@ -6,53 +6,50 @@ built with **Phaser 3 + TypeScript + Vite**.
 The project combines:
 
 - a pure real-time gameplay core
-- a browser-side campaign flow that starts at Map 01
+- a browser-driven campaign that always starts at Map 01
 - a built-in 10x10 map generator/editor
-- static-hosting-friendly persistence through browser `localStorage`
+- canonical published map slots stored as JSON under `public/maps/`
+- static hosting on GitHub Pages, with optional in-browser publishing through
+  the GitHub Contents API
 
 ## Current feature set
 
-- Real-time grid-aware movement, pushing, and crush rules
-- Immovable blocks can be shattered after the player leans into them and tries
-  the same move a second time
-- Campaign progression that starts at Map 01 and advances to the next available
-  map number
-- Menu hub with separate `Play` and `Generate Maps` flows
-- Always-available in-game `Menu` button for returning to the start screen
-- Defeat feedback where the player is visibly eaten by the enemy that catches
-  them
-- Browser-side map editor for Map 01 and custom maps 02-99
-- Editor replacement/erase workflow with single-slot validation for Player and
-  Exit
-- JSON-authored default level content
-- Responsive gameplay board fitting and centered viewport framing
-- Desktop and touch input support
-- GitHub Pages-ready static deployment
+- Real-time grid-aware movement, pushing, crushing, and enemy pursuit
+- Jammed blocks that can be shattered on the second move attempt
+- Campaign progression from Map 01 to the next non-empty published slot
+- Menu hub with `Play` and `Generate Maps`
+- Always-available in-game `Menu` button
+- Defeat animation where the player is visibly devoured by the catching NPC
+- Built-in 10x10 map generator for slots 01-99
+- Upload and download for map JSON files
+- Strict JSON validation before uploaded or published maps are accepted
+- Responsive board fitting that keeps the entire board centered and visible
+- Desktop, mouse, touch, and mobile-friendly play
+- GitHub Pages-ready deployment
 - Vitest, ESLint, and build validation
 
 ## Main flows
 
 ### Play
 
-- Starts from **Map 01**
-- Loads the current authored/default map or the player's saved override for that
-  slot
-- On stage clear, automatically advances to the next available map number
-- If there is no next map, the campaign ends and returns to the menu on input
-- The gameplay HUD always includes a `Menu` button for leaving the run early
+- Always starts from **Map 01**
+- Loads the published slot file for the requested map number
+- Converts non-empty map slots into runtime `LevelData`
+- Advances automatically to the next non-empty published slot after a clear
+- Returns to the menu when the campaign ends
+- Keeps the HUD `Menu` button available throughout the run
 
 ### Generate Maps
 
-- Opens the built-in browser-side 10x10 map generator
-- Starts with a blank 10x10 playable map
-- Lets the player load saved maps from the left-side list
-- Lets the player save new maps to slots **02-99**
-- Lets the player modify **Map 01** but never delete it
-- Lets the player modify or delete custom maps **02-99**
-- Includes an `Eraser` tool and supports replacing an occupied tile by placing a
-  different item over it
-- Refuses saving when the map does not contain exactly one Player start and one
-  Exit
+- Opens the built-in 10x10 map generator
+- Loads the currently published map catalog
+- Allows **Map 01** to be modified but never cleared
+- Allows **Maps 02-99** to be created, overwritten, uploaded, downloaded, or
+  cleared
+- Publishes edits as `public/maps/mapNN.json` files through the GitHub Contents
+  API
+- Validates uploaded JSON before any publish occurs
+- Refuses to save maps that are missing either the Player start or the Exit
 
 ## Controls
 
@@ -69,9 +66,9 @@ The project combines:
 ### Map generator
 
 - **Click / tap a tile**: place or remove the selected item
-- **Left panel**: create new maps or load existing maps
-- **Right panel**: choose what to place, select a save slot for new maps, save,
-  and delete
+- **Left panel**: create new maps or load published maps
+- **Right panel**: choose what to place, pick the save slot for new maps, save,
+  delete, upload, or download
 - **Eraser tool**: remove any existing item from a tile
 
 ## Documentation map
@@ -84,9 +81,10 @@ The project combines:
 - [`docs/GAMEPLAY_MECHANICS.md`](docs/GAMEPLAY_MECHANICS.md)
   Gameplay rules, progression, input interpretation, and win/lose behavior.
 - [`docs/LEVEL_DATA.md`](docs/LEVEL_DATA.md)
-  Level schema, board sizing semantics, and authoring rules.
+  Runtime/editor level schema, slot-file JSON format, and persistence rules.
 - [`docs/MAP_EDITOR.md`](docs/MAP_EDITOR.md)
-  Map generator behavior, persistence, slot rules, and editing workflow.
+  Map generator behavior, slot management, upload/download, and publishing
+  workflow.
 
 ## Architecture summary
 
@@ -97,10 +95,10 @@ The project combines:
 - **MenuScene**
   Presents the main entry points: `Play` and `Generate Maps`.
 - **GameScene**
-  Loads a map slot through the level repository, advances the pure simulation,
+  Loads map slots through the level repository, advances the pure simulation,
   and syncs render actors.
 - **MapEditorScene**
-  Edits 10x10 playable layouts and saves them into browser storage.
+  Edits 10x10 playable layouts and publishes them as map-slot JSON files.
 - **UIScene**
   Renders HUD information for gameplay.
 
@@ -109,7 +107,8 @@ The project combines:
 - **`src/game/core/StageState.ts`**
   Authoritative pure gameplay simulation.
 - **`src/game/data/levelRepository.ts`**
-  Level loading, conversion, progression order, and browser persistence.
+  Slot-file loading, validation, conversion, campaign ordering, and GitHub
+  publication.
 - **`src/game/systems/input/InputController.ts`**
   Normalized keyboard, mouse, and touch intent.
 - **`src/game/utils/layout.ts`**
@@ -118,6 +117,8 @@ The project combines:
   Runtime level schema.
 - **`src/game/types/editor.ts`**
   Editor-facing 10x10 authoring schema.
+- **`src/game/types/mapFile.ts`**
+  Canonical slot-file JSON schema used by `public/maps/mapNN.json`.
 
 ## Project structure
 
@@ -128,6 +129,11 @@ docs/
   GAMEPLAY_MECHANICS.md
   LEVEL_DATA.md
   MAP_EDITOR.md
+public/
+  maps/
+    map01.json
+    ...
+    map99.json
 src/game
   config.ts
   core/
@@ -166,25 +172,44 @@ npm run build
 npm run preview
 ```
 
-## Map persistence
+## Published map slots
 
-- Default content ships with `src/game/data/levels/level01.json`
-- Saved/generated maps are stored in browser `localStorage`
-- Map 01 can be overridden by the player through the editor
-- Maps 02-99 exist only when the player saves them
-- Campaign progression uses the next available saved/default slot number
+- Canonical map files live in `public/maps/map01.json` through
+  `public/maps/map99.json`
+- `map01.json` starts filled with the default campaign opening
+- `map02.json` through `map99.json` start as validated empty slots
+- The game treats `empty: true` slots as unavailable for progression
+- The campaign advances to the next non-empty slot number
 
-Because persistence is browser-local, generated maps belong to the browser
-profile/device where they were created unless the player exports the storage by
-other means in the future.
+## Upload, download, and persistence
 
-## Level sizing
+- `Download` exports the current slot as a JSON slot file
+- `Upload` accepts only validated slot-file JSON and publishes it to the
+  corresponding `mapNN.json`
+- `Save Map` publishes the current editor state to the selected slot
+- `Delete Map` clears slots `02-99` by publishing an empty slot file
+- The hosted site asks for a GitHub Personal Access Token with repository
+  contents write permission before publishing
+- That token is stored only in `sessionStorage` for the current browser tab
+- After publishing, GitHub Pages updates once the `main` push triggers the
+  Pages deployment workflow
 
-- The editor always works with a **10x10 playable area**
-- Runtime `LevelData` still uses a total authored board that includes a
-  one-tile wall border
-- Current authored board size: `12 x 12`
-- Current playable interior: `10 x 10`
+## Security and validation
+
+Uploaded and published map files are checked before they are accepted:
+
+- exact top-level slot-file fields only
+- exact runtime level fields only
+- slot must stay between `01` and `99`
+- `map01` cannot be empty
+- board size must remain `12 x 12`
+- the border wall ring must be complete
+- Player, Exit, Blocks, Enemies, and Walls must stay in-bounds
+- illegal overlaps are rejected
+- file size is capped before parsing
+
+This keeps malformed, incompatible, or suspicious JSON from breaking the game
+runtime.
 
 ## GitHub Pages deployment
 
@@ -199,10 +224,11 @@ Expected public URL:
 Deployment notes:
 
 - `vite.config.ts` uses `base: '/StoneAge/'`
-- `.github/workflows/deploy-pages.yml` builds and deploys `dist/`
+- `.github/workflows/deploy-pages.yml` deploys on pushes to `main`
 - `BootScene` loads assets through `import.meta.env.BASE_URL`
-- Browser persistence for custom maps works on static hosting because it relies
-  on `localStorage`, not a backend
+- published map JSON files are served from `public/maps/`
+- browser-side publishing uses the GitHub Contents API, while GitHub Pages
+  remains the static host for the deployed site
 
 ## Maintenance rule
 

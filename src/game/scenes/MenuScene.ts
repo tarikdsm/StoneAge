@@ -12,8 +12,9 @@ interface MenuButton {
 /**
  * Responsive title/menu scene.
  *
- * The menu now acts as a hub for both campaign play and browser-side map
- * generation while preserving the project's Phaser-only runtime model.
+ * The menu acts as the hub for both campaign play and the published map-slot
+ * workflow, routing players either into the runtime campaign or the GitHub-
+ * backed editor without adding app-shell complexity outside Phaser.
  */
 export class MenuScene extends Phaser.Scene {
   private background?: Phaser.GameObjects.Rectangle
@@ -44,7 +45,7 @@ export class MenuScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(0.5)
 
-    this.subtitleText = this.add.text(0, 0, 'Play the campaign from Map 01 or build custom 10x10 stages in the generator.', {
+    this.subtitleText = this.add.text(0, 0, 'Play the campaign from Map 01 or manage published 10x10 stage slots in the generator.', {
       fontFamily: 'Arial',
       color: '#cbd5e1',
       align: 'center'
@@ -59,7 +60,7 @@ export class MenuScene extends Phaser.Scene {
     this.controlsText = this.add.text(0, 0,
       [
         'Play: always starts at Map 01 and advances to the next available map number after each clear.',
-        'Generator: edits Map 01 or creates custom maps 02-99 directly in your browser.',
+        'Generator: edits Map 01, publishes maps 02-99, and can upload/download validated JSON slot files.',
         'Gameplay: Arrow keys / WASD move, Space pushes, mouse/touch also steer and push.'
       ].join('\n\n'),
       {
@@ -70,13 +71,13 @@ export class MenuScene extends Phaser.Scene {
 
     this.playButton = this.createMenuButton(
       'Play',
-      'Start from Map 01 and progress through saved maps.',
+      'Start from Map 01 and progress through the published map slots.',
       () => this.startGame()
     )
 
     this.editorButton = this.createMenuButton(
       'Generate Maps',
-      'Open the 10x10 map generator and manage maps 01-99.',
+      'Open the 10x10 map generator and manage published maps 01-99.',
       () => this.openEditor()
     )
 
