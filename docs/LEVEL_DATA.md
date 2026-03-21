@@ -38,8 +38,6 @@ Fields:
   Initial pushable block tiles.
 - `enemies`
   Initial enemy definitions.
-- `goals`
-  Exit tiles used for stage completion.
 - `walls` (optional)
   Impassable tiles.
 
@@ -59,8 +57,6 @@ Fields:
   Objective text to save into runtime level data.
 - `playerSpawn`
   Player start inside the 10x10 playable area.
-- `exit`
-  Exit location inside the 10x10 playable area.
 - `blocks`
   Pushable blocks inside the 10x10 playable area.
 - `columns`
@@ -86,7 +82,7 @@ Fields:
 - `type`
   Must be exactly `stoneage-map-slot`.
 - `version`
-  Current slot-file version. Today this is `1`.
+  Current slot-file version. Today this is `2`.
 - `slot`
   Slot number from `1` to `99`.
 - `empty`
@@ -162,7 +158,7 @@ Before a map file is accepted for gameplay or publication:
 - Map 01 may not be empty
 - non-empty slots must include valid `LevelData`
 - runtime board size must stay `12 x 12`
-- Player, Exit, Blocks, and Enemies must stay inside the runtime interior that
+- Player, Blocks, and Enemies must stay inside the runtime interior that
   corresponds to the editor's `10 x 10` playable area
 - the full border wall ring must exist
 - positions must stay in-bounds

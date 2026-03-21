@@ -3,7 +3,7 @@ import type { LevelData } from './level'
 /** Canonical JSON shape stored under `public/maps/mapNN.json`. */
 export interface EmptyMapSlotFile {
   type: 'stoneage-map-slot'
-  version: 1
+  version: 2
   slot: number
   empty: true
 }
@@ -11,7 +11,7 @@ export interface EmptyMapSlotFile {
 /** Non-empty published slot that carries runtime level data. */
 export interface FilledMapSlotFile {
   type: 'stoneage-map-slot'
-  version: 1
+  version: 2
   slot: number
   empty: false
   level: LevelData

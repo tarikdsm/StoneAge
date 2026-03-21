@@ -22,11 +22,11 @@ export interface EnemyDefinition extends GridPoint {
  * - the canonical runtime board is `12 x 12`, including a fixed outer border.
  * - editor-authored `10 x 10` playable maps are converted into this total-board
  *   shape by adding a border wall ring around the playable area.
- * - `playerSpawn`, `blocks`, `enemies`, `goals`, and `walls` are all expressed
+ * - `playerSpawn`, `blocks`, `enemies`, and `walls` are all expressed
  *   in grid coordinates inside that total board.
  * - if border walls are authored, they reduce the open interior play area.
  * - `walls` are impassable to both the player and blocks.
- * - reaching a `goal` tile only wins the stage after all enemies are defeated.
+ * - a stage is cleared by eliminating every enemy.
  */
 export interface LevelData {
   name: string
@@ -38,7 +38,6 @@ export interface LevelData {
   playerSpawn: GridPoint
   blocks: GridPoint[]
   enemies: EnemyDefinition[]
-  goals: GridPoint[]
   walls?: GridPoint[]
 }
 

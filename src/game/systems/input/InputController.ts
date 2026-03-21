@@ -21,8 +21,6 @@ interface TouchLaunchMemory {
 
 export interface RealtimeInputSnapshot {
   moveDirection?: Direction
-  /** One-shot signal used for mechanics that care about a fresh movement attempt. */
-  moveAttemptDirection?: Direction
   pushDirection?: Direction
   /** One-shot signal for launching an adjacent block until it hits something. */
   throwDirection?: Direction
@@ -38,7 +36,6 @@ export interface RealtimeInputSnapshot {
 export class InputController {
   private pointerStart?: PointerSnapshot
   private pointerMoveDirection?: Direction
-  private queuedMoveAttemptDirection?: Direction
   private queuedPushDirection?: Direction
   private queuedThrowDirection?: Direction
   private getAnchor: () => GridPoint = () => ({ x: 0, y: 0 })
@@ -68,7 +65,6 @@ export class InputController {
   snapshot(): RealtimeInputSnapshot {
     return {
       moveDirection: this.getMovementDirection(),
-      moveAttemptDirection: this.consumeMoveAttemptDirection(),
       pushDirection: this.consumePushDirection(),
       throwDirection: this.consumeThrowDirection()
     }
@@ -85,9 +81,6 @@ export class InputController {
     this.scene.input.keyboard?.on('keydown', (event: KeyboardEvent) => {
       const direction = this.directionFromKey(event.code)
       if (direction) {
-        if (!this.movementKeys.has(event.code)) {
-          this.queuedMoveAttemptDirection = direction
-        }
         this.movementKeys.add(event.code)
         if (this.spaceHeld) {
           this.queuedThrowDirection = direction
@@ -164,7 +157,6 @@ export class InputController {
         this.pointerMoveDirection = Math.abs(deltaX) > Math.abs(deltaY)
           ? (deltaX > 0 ? 'right' : 'left')
           : (deltaY > 0 ? 'down' : 'up')
-        this.queuedMoveAttemptDirection = this.pointerMoveDirection
         return
       }
 
@@ -184,20 +176,12 @@ export class InputController {
           }
         } else {
           this.pointerMoveDirection = direction
-          this.queuedMoveAttemptDirection = direction
         }
         return
       }
 
       this.pointerMoveDirection = direction
-      this.queuedMoveAttemptDirection = direction
     })
-  }
-
-  private consumeMoveAttemptDirection(): Direction | undefined {
-    const moveAttemptDirection = this.queuedMoveAttemptDirection
-    this.queuedMoveAttemptDirection = undefined
-    return moveAttemptDirection
   }
 
   private consumePushDirection(): Direction | undefined {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createStageState, stepStageState } from '../core/StageState'
+import { createStageState, stepStageState, type EnemyState, type StageState } from '../core/StageState'
 import type { LevelData } from '../types/level'
 import { RUNTIME_BOARD_HEIGHT, RUNTIME_BOARD_WIDTH, createRuntimeBorderWalls } from '../utils/boardGeometry'
 
@@ -14,9 +14,18 @@ function createCanonicalTestLevel(overrides: Partial<LevelData> = {}): LevelData
     playerSpawn: { x: 3, y: 5 },
     blocks: [{ x: 4, y: 5 }],
     enemies: [{ type: 'basic', x: 8, y: 5 }],
-    goals: [{ x: 8, y: 9 }],
     walls: createRuntimeBorderWalls(),
     ...overrides
+  }
+}
+
+function activateEnemies(state: StageState): void {
+  for (const enemy of state.enemies) {
+    if (!enemy.alive) {
+      continue
+    }
+    enemy.phase = 'active'
+    enemy.phaseTimerMs = 0
   }
 }
 
@@ -26,7 +35,6 @@ function advance(
   steps = 1,
   input: {
     moveDirection?: 'up' | 'down' | 'left' | 'right'
-    moveAttemptDirection?: 'up' | 'down' | 'left' | 'right'
     pushDirection?: 'up' | 'down' | 'left' | 'right'
     throwDirection?: 'up' | 'down' | 'left' | 'right'
   } = {}
@@ -42,9 +50,10 @@ describe('StageState real-time simulation', () => {
     const level = createCanonicalTestLevel({
       playerSpawn: { x: 1, y: 1 },
       blocks: [],
-      enemies: []
+      enemies: [{ type: 'basic', x: 10, y: 10 }]
     })
     const state = createStageState(level)
+    activateEnemies(state)
 
     const outcome = stepStageState(level, state, { moveDirection: 'left' }, 16)
     expect(outcome.playerMoved).toBe(false)
@@ -53,9 +62,11 @@ describe('StageState real-time simulation', () => {
 
   it('moves the player continuously while movement input is held', () => {
     const level = createCanonicalTestLevel({
-      enemies: []
+      blocks: [],
+      enemies: [{ type: 'basic', x: 10, y: 10 }]
     })
     const state = createStageState(level)
+    activateEnemies(state)
 
     stepStageState(level, state, { moveDirection: 'up' }, 100)
     expect(state.player.motion?.to).toEqual({ x: 3, y: 4 })
@@ -73,6 +84,7 @@ describe('StageState real-time simulation', () => {
       blocks: []
     })
     const state = createStageState(idleLevel)
+    activateEnemies(state)
 
     stepStageState(idleLevel, state, {}, 100)
     expect(state.enemies[0]?.motion?.to).toEqual({ x: 7, y: 5 })
@@ -81,29 +93,12 @@ describe('StageState real-time simulation', () => {
     expect(state.enemies[0]?.gridPosition).toEqual({ x: 7, y: 5 })
   })
 
-  it('routes enemies around blockers instead of bouncing left-right in place', () => {
-    const mazeLevel = createCanonicalTestLevel({
-      name: 'Loop Breaker',
-      playerSpawn: { x: 5, y: 8 },
-      blocks: [{ x: 4, y: 5 }, { x: 5, y: 5 }, { x: 6, y: 5 }],
-      enemies: [{ type: 'basic', x: 5, y: 2 }],
-      goals: [{ x: 9, y: 9 }],
-      walls: [...createRuntimeBorderWalls(), { x: 5, y: 4 }]
-    })
-    const state = createStageState(mazeLevel)
-
-    advance(mazeLevel, state, 4)
-    expect(state.enemies[0]?.gridPosition).toEqual({ x: 5, y: 3 })
-
-    advance(mazeLevel, state, 2)
-    expect(state.enemies[0]?.gridPosition).toEqual({ x: 4, y: 3 })
-  })
-
   it('pushes blocks in real time and crushes enemies in the destination tile', () => {
     const crushLevel = createCanonicalTestLevel({
       enemies: [{ type: 'basic', x: 5, y: 5 }]
     })
     const state = createStageState(crushLevel)
+    activateEnemies(state)
 
     const outcome = stepStageState(crushLevel, state, { moveDirection: 'right' }, 16)
     expect(outcome.pushedBlockId).toBe('block-0')
@@ -111,61 +106,108 @@ describe('StageState real-time simulation', () => {
     expect(state.enemies[0]?.alive).toBe(false)
     expect(state.blocks[0]?.motion?.to).toEqual({ x: 5, y: 5 })
     expect(state.player.gridPosition).toEqual({ x: 3, y: 5 })
-
-    stepStageState(crushLevel, state, {}, 200)
-    expect(state.blocks[0]?.gridPosition).toEqual({ x: 5, y: 5 })
+    expect(state.status).toBe('won')
   })
 
-  it('launches a block horizontally across the canonical board until it hits a pursuing enemy', () => {
+  it('launches a block that carries an enemy until crushing it against a wall', () => {
     const launchLevel = createCanonicalTestLevel({
-      enemies: [{ type: 'basic', x: 8, y: 5 }]
+      blocks: [{ x: 4, y: 5 }],
+      enemies: [{ type: 'basic', x: 7, y: 5 }],
+      walls: [...createRuntimeBorderWalls(), { x: 10, y: 5 }]
     })
     const state = createStageState(launchLevel)
+    activateEnemies(state)
 
-    const launchOutcome = stepStageState(launchLevel, state, { moveDirection: 'right', throwDirection: 'right' }, 16)
-    expect(launchOutcome.pushedBlockId).toBe('block-0')
+    const outcome = stepStageState(launchLevel, state, { moveDirection: 'right', throwDirection: 'right' }, 16)
+    expect(outcome.pushedBlockId).toBe('block-0')
     expect(state.player.gridPosition).toEqual({ x: 3, y: 5 })
-    expect(launchOutcome.playerMoved).toBe(false)
     expect(state.blocks[0]?.motion?.to).toEqual({ x: 5, y: 5 })
 
     advance(launchLevel, state, 12)
     expect(state.enemies[0]?.alive).toBe(false)
-    expect(state.blocks[0]?.gridPosition).toEqual({ x: 7, y: 5 })
-    expect(state.blocks[0]?.motion).toBeUndefined()
+    expect(state.blocks[0]?.gridPosition).toEqual({ x: 8, y: 5 })
+    expect(state.status).toBe('won')
   })
 
-  it('launches a block vertically until the next hard blocker on the 12x12 runtime board', () => {
-    const verticalLaunchLevel = createCanonicalTestLevel({
-      playerSpawn: { x: 5, y: 9 },
-      blocks: [{ x: 5, y: 8 }],
-      enemies: [],
-      walls: [...createRuntimeBorderWalls(), { x: 5, y: 3 }]
+  it('allows a launched block to multi-kill enemies in sequence', () => {
+    const launchLevel = createCanonicalTestLevel({
+      blocks: [{ x: 4, y: 5 }],
+      enemies: [
+        { type: 'basic', x: 6, y: 5 },
+        { type: 'basic', x: 8, y: 5 }
+      ],
+      walls: [...createRuntimeBorderWalls(), { x: 10, y: 5 }]
     })
-    const state = createStageState(verticalLaunchLevel)
+    const state = createStageState(launchLevel)
+    activateEnemies(state)
 
-    stepStageState(verticalLaunchLevel, state, { moveDirection: 'up', throwDirection: 'up' }, 16)
-    expect(state.blocks[0]?.motion?.to).toEqual({ x: 5, y: 7 })
+    stepStageState(launchLevel, state, { moveDirection: 'right', throwDirection: 'right' }, 16)
+    advance(launchLevel, state, 16)
 
-    advance(verticalLaunchLevel, state, 10)
-    expect(state.blocks[0]?.gridPosition).toEqual({ x: 5, y: 4 })
-    expect(state.blocks[0]?.motion).toBeUndefined()
+    expect(state.enemies.every((enemy) => !enemy.alive)).toBe(true)
+    expect(state.blocks[0]?.gridPosition).toEqual({ x: 8, y: 5 })
+    expect(state.status).toBe('won')
   })
 
-  it('destroys an immovable block on the second movement attempt against it', () => {
+  it('destroys an immovable block immediately when the player pushes into it', () => {
     const jammedLevel = createCanonicalTestLevel({
-      enemies: [],
+      enemies: [{ type: 'basic', x: 10, y: 10 }],
       walls: [...createRuntimeBorderWalls(), { x: 5, y: 5 }]
     })
     const state = createStageState(jammedLevel)
+    activateEnemies(state)
 
-    const firstOutcome = stepStageState(jammedLevel, state, { moveDirection: 'right', moveAttemptDirection: 'right' }, 16)
-    expect(firstOutcome.destroyedBlockId).toBeUndefined()
-    expect(state.blocks).toHaveLength(1)
-
-    const secondOutcome = stepStageState(jammedLevel, state, { moveDirection: 'right', moveAttemptDirection: 'right' }, 16)
-    expect(secondOutcome.destroyedBlockId).toBe('block-0')
+    const outcome = stepStageState(jammedLevel, state, { moveDirection: 'right' }, 16)
+    expect(outcome.destroyedBlockIds).toEqual(['block-0'])
     expect(state.blocks).toHaveLength(0)
     expect(state.player.gridPosition).toEqual({ x: 3, y: 5 })
+  })
+
+  it('hatches enemies over time before they join the chase', () => {
+    const level = createCanonicalTestLevel({
+      enemies: [
+        { type: 'basic', x: 8, y: 5 },
+        { type: 'basic', x: 9, y: 5 }
+      ]
+    })
+    const state = createStageState(level)
+
+    expect(state.enemies[0]?.phase).toBe('active')
+    expect(state.enemies[1]?.phase).toBe('spawning')
+
+    const hatchOutcome = stepStageState(level, state, {}, 600)
+    expect(hatchOutcome.hatchedEnemyIds).toContain('enemy-1')
+    expect(state.enemies[1]?.phase).toBe('active')
+  })
+
+  it('lets enemies dig through adjacent blocks when the path is sealed', () => {
+    const digLevel = createCanonicalTestLevel({
+      playerSpawn: { x: 8, y: 5 },
+      blocks: [{ x: 4, y: 5 }],
+      enemies: [{ type: 'basic', x: 3, y: 5 }],
+      walls: [...createRuntimeBorderWalls(), { x: 3, y: 4 }, { x: 3, y: 6 }, { x: 2, y: 5 }]
+    })
+    const state = createStageState(digLevel)
+    activateEnemies(state)
+
+    stepStageState(digLevel, state, {}, 16)
+    expect(state.enemies[0]?.phase).toBe('digging')
+
+    advance(digLevel, state, 3)
+    expect(state.blocks).toHaveLength(0)
+  })
+
+  it('accelerates the last surviving enemy', () => {
+    const level = createCanonicalTestLevel({
+      enemies: [{ type: 'basic', x: 8, y: 5 }]
+    })
+    const state = createStageState(level)
+    activateEnemies(state)
+
+    stepStageState(level, state, {}, 100)
+    const enemy = state.enemies[0] as EnemyState
+    expect(enemy.enraged).toBe(true)
+    expect(enemy.worldPosition.x).toBeLessThan(8)
   })
 
   it('marks the game as lost when a moving enemy reaches the player without player movement', () => {
@@ -174,22 +216,23 @@ describe('StageState real-time simulation', () => {
       enemies: [{ type: 'basic', x: 3, y: 3 }]
     })
     const state = createStageState(chaseLevel)
+    activateEnemies(state)
 
     advance(chaseLevel, state, 4)
     expect(state.status).toBe('lost')
     expect(state.message).toContain('caught')
   })
 
-  it('marks the game as won after all enemies are gone and the player reaches the goal', () => {
+  it('marks the game as won after all enemies are gone, without requiring an exit', () => {
     const winLevel = createCanonicalTestLevel({
-      blocks: [],
-      enemies: [],
-      playerSpawn: { x: 7, y: 9 }
+      blocks: [{ x: 4, y: 5 }],
+      enemies: [{ type: 'basic', x: 5, y: 5 }]
     })
     const state = createStageState(winLevel)
+    activateEnemies(state)
 
-    advance(winLevel, state, 1, { moveDirection: 'right' })
-    expect(state.player.gridPosition).toEqual({ x: 8, y: 9 })
+    stepStageState(winLevel, state, { moveDirection: 'right' }, 16)
+    stepStageState(winLevel, state, {}, 200)
     expect(state.status).toBe('won')
     expect(state.message).toContain('Stage clear')
   })

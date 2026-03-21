@@ -16,11 +16,11 @@ The project combines:
 ## Current feature set
 
 - Real-time grid-aware movement, pushing, crushing, and enemy pursuit
-- Enemy pursuit that can route around blockers instead of getting stuck in
-  simple horizontal loops
-- Jammed blocks that can be shattered on the second move attempt
-- Space plus a direction launches an adjacent block until it hits a wall,
-  another block, or an NPC
+- Enemy lifecycle with staged hatching, controlled randomness, digging, and a
+  faster last raider
+- Jammed blocks that are destroyed immediately by the push action
+- Space plus a direction launches an adjacent block that can carry enemies
+  until they are crushed against solid obstacles, including multi-kill chains
 - Campaign progression from Map 01 to the next non-empty published slot
 - Menu hub with `Play` and `Generate Maps`
 - Always-available in-game `Menu` button
@@ -54,7 +54,7 @@ The project combines:
 - On `localhost`, writes edits directly into `public/maps/mapNN.json`
 - On GitHub Pages, publishes edits through the GitHub Contents API
 - Validates uploaded JSON before any publish occurs
-- Refuses to save maps that are missing either the Player start or the Exit
+- Refuses to save maps that are missing the Player start
 
 ## Controls
 
@@ -102,7 +102,7 @@ The project combines:
 - Editable/authored playable area: **10 x 10**
 - Runtime board consumed by gameplay/rendering: **12 x 12**
 - Runtime board border: **1 tile thick on every side**
-- Player, Exit, Blocks, Columns, and NPC spawns all live inside the 10x10
+- Player, Blocks, Columns, and NPC spawns all live inside the 10x10
   interior, while the fixed outer wall ring stays non-playable
 - Shared geometry helpers live in `src/game/utils/boardGeometry.ts`
 
@@ -244,7 +244,7 @@ Uploaded and published map files are checked before they are accepted:
 - `map01` cannot be empty
 - board size must remain `12 x 12`, with a fixed `10 x 10` playable interior
 - the border wall ring must be complete
-- Player, Exit, Blocks, Enemies, and Walls must stay in-bounds
+- Player, Blocks, Enemies, and Walls must stay in-bounds
 - illegal overlaps are rejected
 - file size is capped before parsing
 

@@ -33,7 +33,7 @@ export const MAP_MIN_SLOT = 1
 export const MAP_MAX_SLOT = 99
 export const DEFAULT_TILE_SIZE = 64
 export const MAP_FILE_TYPE = 'stoneage-map-slot'
-export const MAP_FILE_VERSION = 1
+export const MAP_FILE_VERSION = 2
 export const MAX_MAP_FILE_BYTES = 64 * 1024
 
 const MAP_OWNER = 'tarikdsm'
@@ -124,7 +124,7 @@ export function requiresGitHubTokenForMapPublishing(): boolean {
 }
 
 function defaultObjective(): string {
-  return 'Crush every raider with the blocks, then reach the exit.'
+  return 'Crush every raider with the blocks.'
 }
 
 function parseInteger(value: unknown, label: string, min: number, max: number, errors: string[]): number | undefined {
@@ -252,7 +252,6 @@ function validateLevelCollisions(level: LevelData, errors: string[]): void {
   const wallKeys = new Set((level.walls ?? []).map(pointKey))
   const blockKeys = new Set(level.blocks.map(pointKey))
   const enemyKeys = new Set(level.enemies.map(pointKey))
-  const goalKeys = new Set(level.goals.map(pointKey))
   const playerKey = pointKey(level.playerSpawn)
 
   if (wallKeys.has(playerKey)) {
@@ -267,17 +266,9 @@ function validateLevelCollisions(level: LevelData, errors: string[]): void {
     errors.push('level.playerSpawn cannot overlap an enemy.')
   }
 
-  if (wallKeys.has(pointKey(level.goals[0] as GridPoint))) {
-    errors.push('level.goals[0] cannot overlap a wall.')
-  }
-
   for (const key of blockKeys) {
     if (wallKeys.has(key)) {
       errors.push('level.blocks cannot overlap walls.')
-      break
-    }
-    if (goalKeys.has(key)) {
-      errors.push('level.blocks cannot overlap the exit.')
       break
     }
   }
@@ -291,16 +282,12 @@ function validateLevelCollisions(level: LevelData, errors: string[]): void {
       errors.push('level.enemies cannot overlap blocks.')
       break
     }
-    if (goalKeys.has(key)) {
-      errors.push('level.enemies cannot overlap the exit.')
-      break
-    }
   }
 }
 
 function validateLevelDataRecord(value: unknown): ValidationResult<LevelData> {
   const errors: string[] = []
-  if (!isRecord(value) || !hasOnlyKeys(value, ['name', 'tileSize', 'width', 'height', 'par', 'objective', 'playerSpawn', 'blocks', 'enemies', 'goals', 'walls'])) {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['name', 'tileSize', 'width', 'height', 'par', 'objective', 'playerSpawn', 'blocks', 'enemies', 'walls'])) {
     errors.push('level must contain only the expected level fields.')
     return { errors }
   }
@@ -314,12 +301,7 @@ function validateLevelDataRecord(value: unknown): ValidationResult<LevelData> {
   const playerSpawn = parseGridPoint(value.playerSpawn, 'level.playerSpawn', errors)
   const blocks = parseGridPointList(value.blocks, 'level.blocks', errors)
   const enemies = parseEnemyDefinitions(value.enemies, errors)
-  const goals = parseGridPointList(value.goals, 'level.goals', errors)
   const walls = value.walls === undefined ? [] : parseGridPointList(value.walls, 'level.walls', errors)
-
-  if (goals && goals.length !== 1) {
-    errors.push('level.goals must contain exactly one exit.')
-  }
 
   if (walls) {
     const wallKeys = new Set(walls.map(pointKey))
@@ -335,7 +317,7 @@ function validateLevelDataRecord(value: unknown): ValidationResult<LevelData> {
     errors.push(`level.playerSpawn must stay inside the ${PLAYABLE_AREA_LABEL} playable runtime interior.`)
   }
 
-  for (const pointList of [blocks, goals]) {
+  for (const pointList of [blocks]) {
     if (!pointList) {
       continue
     }
@@ -366,7 +348,7 @@ function validateLevelDataRecord(value: unknown): ValidationResult<LevelData> {
     }
   }
 
-  if (errors.length > 0 || !name || !objective || tileSize === undefined || width === undefined || height === undefined || par === undefined || !playerSpawn || !blocks || !enemies || !goals || !walls) {
+  if (errors.length > 0 || !name || !objective || tileSize === undefined || width === undefined || height === undefined || par === undefined || !playerSpawn || !blocks || !enemies || !walls) {
     return { errors }
   }
 
@@ -380,7 +362,6 @@ function validateLevelDataRecord(value: unknown): ValidationResult<LevelData> {
     playerSpawn,
     blocks,
     enemies,
-    goals,
     walls
   }
 
@@ -408,7 +389,6 @@ function sanitizeMapSlotFile(file: MapSlotFile): MapSlotFile {
       playerSpawn: clonePoint(file.level.playerSpawn),
       blocks: file.level.blocks.map(clonePoint),
       enemies: file.level.enemies.map((enemy) => ({ ...enemy })),
-      goals: file.level.goals.map(clonePoint),
       walls: file.level.walls?.map(clonePoint)
     }
   }
@@ -515,7 +495,6 @@ export function editableLevelFromLevel(slot: number, level: LevelData): Editable
     name: level.name,
     objective: level.objective,
     playerSpawn: toPlayableAreaPoint(level.playerSpawn),
-    exit: level.goals[0] ? toPlayableAreaPoint(level.goals[0]) : undefined,
     blocks: level.blocks.map(toPlayableAreaPoint),
     columns: (level.walls ?? []).filter((wall) => !isRuntimeBorderWall(wall)).map(toPlayableAreaPoint),
     enemies: level.enemies.map(toPlayableAreaPoint)
@@ -556,7 +535,6 @@ export function buildLevelFromEditableLevel(editable: EditableLevelData): LevelD
       type: 'basic',
       ...toRuntimeBoardPoint(enemy)
     })) as EnemyDefinition[],
-    goals: [toRuntimeBoardPoint(editable.exit as GridPoint)],
     walls: [...createRuntimeBorderWalls(), ...editable.columns.map(toRuntimeBoardPoint)]
   }
 }
@@ -587,16 +565,8 @@ export function validateEditableLevel(editable: EditableLevelData): string[] {
     errors.push('Add one player start position before saving.')
   }
 
-  if (!editable.exit) {
-    errors.push('Add one exit before saving.')
-  }
-
   if (editable.playerSpawn && !isInsidePlayableArea(editable.playerSpawn)) {
     errors.push(`Player start must stay inside the ${PLAYABLE_AREA_LABEL} playable area.`)
-  }
-
-  if (editable.exit && !isInsidePlayableArea(editable.exit)) {
-    errors.push(`Exit must stay inside the ${PLAYABLE_AREA_LABEL} playable area.`)
   }
 
   for (const list of [editable.blocks, editable.columns, editable.enemies]) {

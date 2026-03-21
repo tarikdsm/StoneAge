@@ -28,11 +28,11 @@ The project is organized around a few stable rules:
 Pure gameplay logic lives here.
 
 - `StageState.ts` is the authoritative real-time simulation model.
-- It owns movement, pushing, crush logic, enemy pursuit, win/lose state, and
-  jammed-block destruction.
+- It owns movement, pushing, launch carry/crush logic, enemy lifecycle,
+  win/lose state, and jammed-block destruction.
 - It also owns multi-tile launched-block behavior triggered by the input layer.
 - Enemy routing intelligence also lives here, including blocker-aware chase
-  selection.
+  selection, digging, controlled randomness, and last-enemy acceleration.
 - It has no Phaser dependency.
 - It is advanced only through `stepStageState(level, state, input, deltaMs)`.
 
@@ -82,7 +82,7 @@ Input systems convert raw browser/device input into normalized intent.
 
 - keyboard, mouse, and touch are interpreted here
 - the result is gameplay intent, including both continuous movement direction
-  and one-shot movement/push attempts
+  and one-shot launch/push attempts
 - both campaign play and scene logic depend on this clean boundary
 
 ### `src/game/utils`

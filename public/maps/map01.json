@@ -1,6 +1,6 @@
 {
     "type":  "stoneage-map-slot",
-    "version":  1,
+    "version":  2,
     "slot":  1,
     "empty":  false,
     "level":  {
@@ -9,7 +9,7 @@
                   "width":  12,
                   "height":  12,
                   "par":  3,
-                  "objective":  "Survive the opening rush, crush every raider with the ice blocks, then reach the glowing exit.",
+                  "objective":  "Crush every raider with the blocks.",
                   "playerSpawn":  {
                                       "x":  5,
                                       "y":  6
@@ -53,12 +53,6 @@
                                       "y":  1
                                   }
                               ],
-                  "goals":  [
-                                {
-                                    "x":  9,
-                                    "y":  6
-                                }
-                            ],
                   "walls":  [
                                 {
                                     "x":  0,

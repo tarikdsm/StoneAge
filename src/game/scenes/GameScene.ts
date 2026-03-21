@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { formatLevelLabel, getLevel, getNextLevelSlot } from '../data/levelRepository'
-import { createStageState, isGoal, stepStageState, type StageState } from '../core/StageState'
+import { createStageState, stepStageState, type SimulationOutcome, type StageState } from '../core/StageState'
 import { playPushSfx } from '../audio/playPushSfx'
 import { Block } from '../entities/Block'
 import { Enemy } from '../entities/Enemy'
@@ -54,6 +54,7 @@ export class GameScene extends Phaser.Scene {
   private continueLockedUntilMs = 0
   private loadingText?: Phaser.GameObjects.Text
   private ready = false
+  private launchCombos = new Map<string, number>()
 
   constructor() {
     super('GameScene')
@@ -69,6 +70,7 @@ export class GameScene extends Phaser.Scene {
     this.continueLockedUntilMs = 0
     this.lastDirection = 'right'
     this.ready = false
+    this.launchCombos.clear()
     this.loadingText = this.add.text(this.scale.width / 2, this.scale.height / 2, 'Loading map...', {
       fontFamily: 'Arial',
       fontSize: '22px',
@@ -178,12 +180,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    for (const goal of this.level.goals) {
-      const [worldX, worldY] = this.toWorld(goal)
-      this.add.circle(worldX, worldY, this.level.tileSize * 0.28, 0xfacc15, 0.18)
-      this.add.rectangle(worldX, worldY, this.level.tileSize * 0.72, this.level.tileSize * 0.72, 0xfacc15, 0.12)
-        .setStrokeStyle(4, 0xfacc15, 0.9)
-    }
   }
 
   private spawnActors(): void {
@@ -215,6 +211,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       blockActor.explode()
+      this.launchCombos.delete(blockId)
       this.blocks.delete(blockId)
     }
 
@@ -240,14 +237,32 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private animateFrameFeedback(outcome: ReturnType<typeof stepStageState>): void {
+  private animateFrameFeedback(outcome: SimulationOutcome): void {
     if (outcome.pushedBlockId) {
       playPushSfx(this)
+      const blockActor = this.blocks.get(outcome.pushedBlockId)
+      blockActor?.pulseLaunch()
+
+      if (outcome.crushedEnemyIds.length > 0) {
+        const nextCombo = (this.launchCombos.get(outcome.pushedBlockId) ?? 0) + outcome.crushedEnemyIds.length
+        this.launchCombos.set(outcome.pushedBlockId, nextCombo)
+        blockActor?.playCombo(nextCombo)
+      } else if (this.state.blocks.find((block) => block.id === outcome.pushedBlockId)?.slideDirection) {
+        this.launchCombos.set(outcome.pushedBlockId, 0)
+      }
+    }
+
+    for (const pushedEnemyId of outcome.pushedEnemyIds) {
+      this.enemies.get(pushedEnemyId)?.playBlockPushReaction()
+    }
+
+    for (const hatchedEnemyId of outcome.hatchedEnemyIds) {
+      this.enemies.get(hatchedEnemyId)?.playHatchBurst()
     }
 
     if (this.statusPulse) {
       this.statusPulse.setFillStyle(this.state.status === 'lost' ? 0xfb7185 : this.state.status === 'won' ? 0xfacc15 : 0x38bdf8, 0.22)
-      if (outcome.pushedBlockId || outcome.destroyedBlockId || outcome.crushedEnemyIds.length > 0 || outcome.statusChanged) {
+      if (outcome.pushedBlockId || outcome.destroyedBlockIds.length > 0 || outcome.crushedEnemyIds.length > 0 || outcome.hatchedEnemyIds.length > 0 || outcome.statusChanged) {
         this.tweens.add({
           targets: this.statusPulse,
           alpha: 0.05,
@@ -258,10 +273,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (outcome.crushedEnemyIds.length > 0) {
-      this.cameras.main.shake(90, 0.002)
+      this.cameras.main.shake(90 + outcome.crushedEnemyIds.length * 35, 0.0022 + outcome.crushedEnemyIds.length * 0.0004)
     }
 
-    if (outcome.destroyedBlockId) {
+    if (outcome.destroyedBlockIds.length > 0) {
       this.cameras.main.shake(120, 0.003)
     }
 
@@ -273,7 +288,7 @@ export class GameScene extends Phaser.Scene {
 
   private emitUiState(status: string): void {
     const payload: UIState = {
-      levelName: `${formatLevelLabel(this.levelSlot)} - ${this.level.name}${isGoal(this.level, this.state.player.gridPosition) ? ' - Exit Ready' : ''}`,
+      levelName: `${formatLevelLabel(this.levelSlot)} - ${this.level.name}`,
       enemiesRemaining: this.state.enemies.filter((enemy) => enemy.alive).length,
       objective: this.level.objective,
       status,

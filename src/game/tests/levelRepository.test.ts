@@ -26,7 +26,6 @@ function createPublishedMap(slot: number, overrides: Partial<EditableLevelData> 
   return buildMapSlotFileFromEditableLevel({
     ...createEmptyEditableLevel(slot),
     playerSpawn: { x: 1, y: 1 },
-    exit: { x: 8, y: 8 },
     ...overrides
   })
 }
@@ -67,7 +66,6 @@ describe('levelRepository', () => {
       name: 'Ice Cavern 02',
       objective: 'Test',
       playerSpawn: { x: 1, y: 2 },
-      exit: { x: 8, y: 9 },
       blocks: [{ x: 3, y: 4 }],
       columns: [{ x: 5, y: 6 }],
       enemies: [{ x: 7, y: 1 }]
@@ -76,7 +74,6 @@ describe('levelRepository', () => {
     expect(level.width).toBe(RUNTIME_BOARD_WIDTH)
     expect(level.height).toBe(RUNTIME_BOARD_HEIGHT)
     expect(level.playerSpawn).toEqual({ x: 2, y: 3 })
-    expect(level.goals[0]).toEqual({ x: 9, y: 10 })
     expect(level.blocks[0]).toEqual({ x: 4, y: 5 })
     expect(level.enemies[0]).toEqual({ type: 'basic', x: 8, y: 2 })
     expect(level.walls).toContainEqual({ x: 6, y: 7 })
@@ -95,14 +92,12 @@ describe('levelRepository', () => {
       playerSpawn: { x: 5, y: 6 },
       blocks: [{ x: 3, y: 4 }],
       enemies: [{ type: 'basic', x: 7, y: 2 }],
-      goals: [{ x: 10, y: 9 }],
       walls: [...createRuntimeBorderWalls(), { x: 6, y: 7 }]
     }
 
     const editable = editableLevelFromLevel(4, authoredLevel)
     expect(editable.slot).toBe(4)
     expect(editable.playerSpawn).toEqual({ x: 4, y: 5 })
-    expect(editable.exit).toEqual({ x: 9, y: 8 })
     expect(editable.blocks).toEqual([{ x: 2, y: 3 }])
     expect(editable.enemies).toEqual([{ x: 6, y: 1 }])
     expect(editable.columns).toEqual([{ x: 5, y: 6 }])
@@ -125,7 +120,7 @@ describe('levelRepository', () => {
   it('rejects malformed slot files with unexpected fields or invalid slot content', () => {
     const extraFieldResult = validateMapSlotFileData({
       type: 'stoneage-map-slot',
-      version: 1,
+      version: 2,
       slot: 2,
       empty: true,
       injected: 'nope'
@@ -135,7 +130,7 @@ describe('levelRepository', () => {
 
     const emptyMap01Result = validateMapSlotFileData({
       type: 'stoneage-map-slot',
-      version: 1,
+      version: 2,
       slot: 1,
       empty: true
     })
@@ -228,22 +223,16 @@ describe('levelRepository', () => {
     )
   })
 
-  it('requires both a player start and an exit before a map can be saved', () => {
+  it('requires a player start before a map can be saved, but no longer requires an exit', () => {
     const emptyMap = createEmptyEditableLevel(2)
     expect(validateEditableLevel(emptyMap)).toEqual([
-      'Add one player start position before saving.',
-      'Add one exit before saving.'
+      'Add one player start position before saving.'
     ])
 
     expect(validateEditableLevel({
       ...emptyMap,
       playerSpawn: { x: 1, y: 1 }
-    })).toEqual(['Add one exit before saving.'])
-
-    expect(validateEditableLevel({
-      ...emptyMap,
-      exit: { x: 8, y: 8 }
-    })).toEqual(['Add one player start position before saving.'])
+    })).toEqual([])
   })
 
   it('keeps the published map catalog aligned to the canonical geometry contract', async () => {
@@ -258,6 +247,7 @@ describe('levelRepository', () => {
       if (parsed.value && !parsed.value.empty) {
         expect(parsed.value.level.width).toBe(RUNTIME_BOARD_WIDTH)
         expect(parsed.value.level.height).toBe(RUNTIME_BOARD_HEIGHT)
+        expect(Object.prototype.hasOwnProperty.call(parsed.value.level, 'goals')).toBe(false)
       }
     }
   })

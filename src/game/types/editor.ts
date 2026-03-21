@@ -1,7 +1,7 @@
 import type { GridPoint } from './level'
 
 /** Selectable tools available in the map editor UI. */
-export type EditorTool = 'player' | 'block' | 'column' | 'enemy' | 'exit' | 'erase'
+export type EditorTool = 'player' | 'block' | 'column' | 'enemy' | 'erase'
 
 /**
  * Authoring-friendly editor shape for the canonical 10x10 playable area.
@@ -14,7 +14,6 @@ export interface EditableLevelData {
   name: string
   objective: string
   playerSpawn?: GridPoint
-  exit?: GridPoint
   blocks: GridPoint[]
   columns: GridPoint[]
   enemies: GridPoint[]

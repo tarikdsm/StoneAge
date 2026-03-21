@@ -37,14 +37,13 @@ interface EditorButton {
   hovered: boolean
 }
 
-const TOOL_ORDER: EditorTool[] = ['player', 'block', 'column', 'enemy', 'exit', 'erase']
+const TOOL_ORDER: EditorTool[] = ['player', 'block', 'column', 'enemy', 'erase']
 
 const TOOL_LABELS: Record<EditorTool, string> = {
   player: 'Player',
   block: 'Blocks',
   column: 'Columns',
   enemy: 'NPCs',
-  exit: 'Exit',
   erase: 'Eraser'
 }
 
@@ -601,14 +600,6 @@ export class MapEditorScene extends Phaser.Scene {
         this.clearOccupants(point)
         this.editorState.playerSpawn = { ...point }
         return
-      case 'exit':
-        if (this.editorState.exit && samePoint(this.editorState.exit, point)) {
-          this.editorState.exit = undefined
-          return
-        }
-        this.clearOccupants(point)
-        this.editorState.exit = { ...point }
-        return
       case 'block':
         this.togglePointList(this.editorState.blocks, point)
         return
@@ -640,10 +631,6 @@ export class MapEditorScene extends Phaser.Scene {
   private clearOccupants(point: GridPoint): void {
     if (this.editorState.playerSpawn && samePoint(this.editorState.playerSpawn, point)) {
       this.editorState.playerSpawn = undefined
-    }
-
-    if (this.editorState.exit && samePoint(this.editorState.exit, point)) {
-      this.editorState.exit = undefined
     }
 
     for (const list of [this.editorState.blocks, this.editorState.columns, this.editorState.enemies]) {
@@ -778,7 +765,6 @@ export class MapEditorScene extends Phaser.Scene {
   private downloadCurrentMap(): void {
     try {
       const hasPlacedAnything = Boolean(this.editorState.playerSpawn)
-        || Boolean(this.editorState.exit)
         || this.editorState.blocks.length > 0
         || this.editorState.columns.length > 0
         || this.editorState.enemies.length > 0
@@ -836,7 +822,7 @@ export class MapEditorScene extends Phaser.Scene {
     this.editorTitleText?.setText(title)
     this.countsText?.setText(
       [
-        `Player ${this.editorState.playerSpawn ? '1' : '0'} | Exit ${this.editorState.exit ? '1' : '0'}`,
+        `Player ${this.editorState.playerSpawn ? '1' : '0'}`,
         `Blocks ${this.editorState.blocks.length} | Columns ${this.editorState.columns.length}`,
         `NPCs ${this.editorState.enemies.length}`
       ].join('\n')
@@ -851,7 +837,7 @@ export class MapEditorScene extends Phaser.Scene {
         `Selected: ${TOOL_LABELS[this.selectedTool]}`,
         'Click a tile to place.',
         this.selectedTool === 'erase' ? 'Click a tile to erase its current item.' : 'Click the same tile again to remove.',
-        'Player and Exit are limited to one each.'
+        'Player is limited to one.'
       ].join('\n')
     )
 
@@ -880,7 +866,6 @@ export class MapEditorScene extends Phaser.Scene {
     this.renderMarkers(this.editorState.blocks, 0xa5f3fc, 'B', 'block')
     this.renderMarkers(this.editorState.columns, 0x64748b, 'C', 'column')
     this.renderMarkers(this.editorState.enemies, 0xfb7185, 'N', 'enemy')
-    this.renderMarker(this.editorState.exit, 0xfacc15, 'S', 'exit')
     this.updateButtonStates()
   }
 
@@ -909,10 +894,6 @@ export class MapEditorScene extends Phaser.Scene {
     } else if (type === 'enemy') {
       shape = this.add.image(0, 0, 'enemy')
       shape.setDisplaySize(this.cellSize * 0.72, this.cellSize * 0.72)
-    } else if (type === 'exit') {
-      shape = this.add.rectangle(0, 0, this.cellSize * 0.56, this.cellSize * 0.56, color, 0.35)
-      shape.setAngle(45)
-      shape.setStrokeStyle(3, color, 0.95)
     } else {
       shape = this.add.rectangle(0, 0, this.cellSize * 0.62, this.cellSize * 0.62, color, 0.95)
       shape.setStrokeStyle(2, 0xe2e8f0, 0.35)
@@ -932,9 +913,6 @@ export class MapEditorScene extends Phaser.Scene {
   private getOccupantType(point: GridPoint): EditorTool | undefined {
     if (this.editorState.playerSpawn && samePoint(this.editorState.playerSpawn, point)) {
       return 'player'
-    }
-    if (this.editorState.exit && samePoint(this.editorState.exit, point)) {
-      return 'exit'
     }
     if (this.editorState.blocks.some((candidate) => samePoint(candidate, point))) {
       return 'block'

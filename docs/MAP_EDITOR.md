@@ -24,7 +24,7 @@ The editor is organized into three areas:
 ### Left panel
 
 - current editing mode and target save slot
-- a separate counts/status block for Player, Exit, Blocks, Columns, and NPCs
+- a separate counts/status block for Player, Blocks, Columns, and NPCs
 - `New Map` action in its own section
 - dividers separating summary, counts, `New Map`, and `Maps`
 - list of published non-empty maps
@@ -65,15 +65,12 @@ Current palette options:
    Fixed blocking columns.
 4. **NPCs**
    Enemy spawn tiles.
-5. **Exit**
-   Goal tile required for stage completion.
-6. **Eraser**
+5. **Eraser**
    Removes any existing item from the clicked tile.
 
 ## Placement rules
 
 - **Player** is limited to one.
-- **Exit** is limited to one.
 - **Blocks**, **Columns**, and **NPCs** may have multiple placements.
 - Clicking the same tile again with the same tool removes that placement.
 - Placing a different tool on an occupied tile replaces the old occupant.
@@ -96,7 +93,6 @@ Current palette options:
 ### Save validation
 
 - a map cannot be saved without a **Player**
-- a map cannot be saved without an **Exit**
 - failed validation shows a discreet status message in the editor header instead
   of silently saving invalid content
 

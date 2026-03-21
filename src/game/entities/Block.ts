@@ -10,6 +10,7 @@ export class Block extends GridActor {
   private readonly shine: Phaser.GameObjects.Rectangle
   private readonly seam: Phaser.GameObjects.Rectangle
   private exploding = false
+  private comboLevel = 0
 
   constructor(scene: Phaser.Scene, tileSize: number, boardOrigin: GridPoint, gridPosition: GridPoint, id: string) {
     super(scene, tileSize, boardOrigin, gridPosition)
@@ -30,6 +31,57 @@ export class Block extends GridActor {
     }
 
     this.syncToGrid(state.worldPosition)
+    if (state.slideDirection && state.motion) {
+      const laneProgress = state.motion.progress
+      const tilt = Math.sin(laneProgress * Math.PI * 2) * 7
+      this.sprite.setAngle(tilt)
+      this.shine.setAlpha(1)
+      this.seam.setAlpha(0.85)
+      this.shadow.setScale(1.06, 1)
+    } else {
+      this.sprite.setAngle(0)
+      this.shine.setAlpha(0.9)
+      this.seam.setAlpha(0.65)
+      this.shadow.setScale(1, 1)
+      this.comboLevel = 0
+    }
+  }
+
+  pulseLaunch(): void {
+    if (this.exploding) {
+      return
+    }
+
+    this.scene.tweens.add({
+      targets: this,
+      scaleX: 1.08,
+      scaleY: 1.08,
+      duration: 90,
+      yoyo: true,
+      ease: 'Sine.Out'
+    })
+  }
+
+  playCombo(comboCount: number): void {
+    if (this.exploding || comboCount <= this.comboLevel) {
+      return
+    }
+
+    this.comboLevel = comboCount
+    this.sprite.setTint(comboCount >= 2 ? 0xfacc15 : 0xffffff)
+    this.shine.setFillStyle(comboCount >= 2 ? 0xfef08a : 0xfde68a, 1)
+    this.scene.tweens.add({
+      targets: [this.sprite, this.shine],
+      alpha: 0.35,
+      yoyo: true,
+      duration: 140,
+      repeat: comboCount >= 2 ? 1 : 0,
+      onComplete: () => {
+        this.sprite.clearTint()
+        this.sprite.setAlpha(1)
+        this.shine.setAlpha(0.9)
+      }
+    })
   }
 
   /** Plays a one-shot explosion so destroyed blocks disappear with readable feedback. */
