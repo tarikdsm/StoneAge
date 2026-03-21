@@ -843,6 +843,73 @@ $actDefinitions = @(
   }
 )
 
+$recipeOverrides = @{
+  30 = @{
+    family = 'checker'
+    transform = 'rotate90'
+    pickMode = 'center'
+    enemyCount = 5
+    blockCount = 9
+    columnCount = 8
+  }
+  35 = @{
+    family = 'crossfire'
+    transform = 'rotate90'
+    pickMode = 'pingpong'
+    enemyCount = 5
+    blockCount = 10
+    columnCount = 9
+  }
+  41 = @{
+    family = 'hourglass'
+    transform = 'mirrorY'
+    pickMode = 'center'
+    enemyCount = 5
+    blockCount = 9
+    columnCount = 6
+  }
+  42 = @{
+    family = 'checker'
+    transform = 'mirrorX'
+    pickMode = 'center'
+    enemyCount = 5
+    blockCount = 9
+    columnCount = 9
+  }
+  46 = @{
+    family = 'crossfire'
+    transform = 'mirrorY'
+    pickMode = 'center'
+    enemyCount = 6
+    blockCount = 10
+    columnCount = 10
+  }
+  47 = @{
+    family = 'checker'
+    transform = 'rotate270'
+    pickMode = 'pingpong'
+    enemyCount = 6
+    blockCount = 10
+    columnCount = 10
+  }
+  80 = @{
+    family = 'crossfire'
+    transform = 'rotate180'
+    pickMode = 'center'
+    enemyCount = 6
+    blockCount = 11
+    columnCount = 10
+  }
+  85 = @{
+    family = 'crucible'
+    transform = 'mirrorY'
+    pickMode = 'center'
+    enemyCount = 7
+    blockCount = 12
+    columnCount = 11
+  }
+}
+
 function New-CampaignRecipes {
   $recipes = @()
   $slot = 1
@@ -853,9 +920,8 @@ function New-CampaignRecipes {
       $familyName = $act.families[$index % $act.families.Count]
       $transform = $act.transforms[$index % $act.transforms.Count]
       $pickMode = $act.pickModes[$index % $act.pickModes.Count]
-      $familyTitle = $parsedFamilies[$familyName].title
 
-      $recipes += [ordered]@{
+      $recipe = [pscustomobject][ordered]@{
         slot = $slot
         actTheme = $act.theme
         family = $familyName
@@ -864,8 +930,18 @@ function New-CampaignRecipes {
         enemyCount = $act.enemies[$index]
         blockCount = $act.blocks[$index]
         columnCount = $act.columns[$index]
-        name = '{0} {1:D2} - {2}' -f $act.theme, $slot, $familyTitle
+        name = ''
       }
+
+      $override = $recipeOverrides[$slot]
+      if ($null -ne $override) {
+        foreach ($propertyName in $override.Keys) {
+          $recipe.$propertyName = $override[$propertyName]
+        }
+      }
+
+      $recipe.name = '{0} {1:D2} - {2}' -f $act.theme, $slot, $parsedFamilies[$recipe.family].title
+      $recipes += $recipe
 
       $slot += 1
     }
