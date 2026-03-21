@@ -12,10 +12,12 @@ import {
   formatLevelName,
   getFirstAvailableCustomSlot,
   getMapSlotFile,
+  getMapPublishingMode,
   listLevelSummaries,
   parseMapSlotFileText,
   publishEditableLevel,
   publishMapSlotFile,
+  requiresGitHubTokenForMapPublishing,
   sanitizeSlot,
   serializeMapSlotFile,
   validateEditableLevel
@@ -53,8 +55,9 @@ const GITHUB_TOKEN_SESSION_KEY = 'stoneage:github-token:session'
  *
  * The editor now treats `public/maps/mapNN.json` as the canonical published
  * source of truth. Uploads, saves, deletes, and downloads all operate on that
- * slot-file format, while the gameplay runtime still consumes converted
- * `LevelData`.
+ * slot-file format. On `localhost`, writes go straight into the project files;
+ * on GitHub Pages, writes use the GitHub API. The gameplay runtime still
+ * consumes converted `LevelData`.
  */
 export class MapEditorScene extends Phaser.Scene {
   private readonly sectionDividerColor = 0x38bdf8
@@ -488,7 +491,7 @@ export class MapEditorScene extends Phaser.Scene {
     this.setBusy(true, 'Loading published maps...')
     try {
       await this.refreshMapSummaries()
-      await this.resetToNewMap('Published map catalog loaded.')
+      await this.resetToNewMap(this.getCatalogReadyMessage())
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : 'Unable to load the map catalog.', true)
     } finally {
@@ -553,8 +556,8 @@ export class MapEditorScene extends Phaser.Scene {
       return
     }
 
-    const token = await this.ensureGitHubToken('Saving a map to GitHub Pages requires write access to the repository.')
-    if (!token) {
+    const token = await this.getPublishTokenIfNeeded('Saving a map on the hosted site requires write access to the GitHub repository.')
+    if (requiresGitHubTokenForMapPublishing() && !token) {
       return
     }
 
@@ -565,13 +568,13 @@ export class MapEditorScene extends Phaser.Scene {
     this.editorState.slot = slot
     this.editorState.name = slot === 1 ? this.editorState.name : formatLevelName(slot)
 
-    this.setBusy(true, `Publishing ${formatLevelLabel(slot)} to GitHub...`)
+    this.setBusy(true, this.getSaveProgressMessage(slot))
     try {
-      const publishedFile = await publishEditableLevel(this.editorState, token)
+      const publishedFile = await publishEditableLevel(this.editorState, { token })
       await this.refreshMapSummaries()
-      this.applyLoadedMapFile(publishedFile, `${formatLevelLabel(slot)} published. GitHub Pages may take a minute to refresh.`)
+      this.applyLoadedMapFile(publishedFile, this.getSaveSuccessMessage(slot))
     } catch (error) {
-      this.handleGitHubError(error, `Unable to publish ${formatLevelLabel(slot)}.`)
+      this.handleGitHubError(error, this.getSaveFailureMessage(slot))
     } finally {
       this.setBusy(false)
     }
@@ -583,18 +586,19 @@ export class MapEditorScene extends Phaser.Scene {
       return
     }
 
-    const token = await this.ensureGitHubToken('Clearing a published slot requires write access to the GitHub repository.')
-    if (!token) {
+    const token = await this.getPublishTokenIfNeeded('Clearing a map on the hosted site requires write access to the GitHub repository.')
+    if (requiresGitHubTokenForMapPublishing() && !token) {
       return
     }
 
-    this.setBusy(true, `Clearing ${formatLevelLabel(this.editorState.slot)} on GitHub...`)
+    const slot = this.editorState.slot
+    this.setBusy(true, this.getDeleteProgressMessage(slot))
     try {
-      await clearMapSlot(this.editorState.slot, token)
+      await clearMapSlot(slot, { token })
       await this.refreshMapSummaries()
-      await this.resetToNewMap(`${formatLevelLabel(this.editorState.slot)} cleared. GitHub Pages may take a minute to refresh.`)
+      await this.resetToNewMap(this.getDeleteSuccessMessage(slot))
     } catch (error) {
-      this.handleGitHubError(error, `Unable to clear ${formatLevelLabel(this.editorState.slot)}.`)
+      this.handleGitHubError(error, this.getDeleteFailureMessage(slot))
     } finally {
       this.setBusy(false)
     }
@@ -636,21 +640,18 @@ export class MapEditorScene extends Phaser.Scene {
       return
     }
 
-    const token = await this.ensureGitHubToken('Uploading a map file requires write access to the GitHub repository.')
-    if (!token) {
+    const token = await this.getPublishTokenIfNeeded('Uploading a map file on the hosted site requires write access to the GitHub repository.')
+    if (requiresGitHubTokenForMapPublishing() && !token) {
       return
     }
 
-    this.setBusy(true, `Uploading ${formatLevelLabel(parsed.value.slot)} to GitHub...`)
+    this.setBusy(true, this.getUploadProgressMessage(parsed.value.slot))
     try {
-      const published = await publishMapSlotFile(parsed.value, token)
+      const published = await publishMapSlotFile(parsed.value, { token })
       await this.refreshMapSummaries()
-      this.applyLoadedMapFile(
-        published,
-        `${formatLevelLabel(published.slot)} uploaded and published. GitHub Pages may take a minute to refresh.`
-      )
+      this.applyLoadedMapFile(published, this.getUploadSuccessMessage(published.slot))
     } catch (error) {
-      this.handleGitHubError(error, 'Unable to upload the selected map file.')
+      this.handleGitHubError(error, this.getUploadFailureMessage(parsed.value.slot))
     } finally {
       this.setBusy(false)
     }
@@ -922,6 +923,78 @@ export class MapEditorScene extends Phaser.Scene {
 
   private getPageCount(): number {
     return Math.max(1, Math.ceil(this.mapSummaries.length / this.listPageSize))
+  }
+
+  private isLocalPublishingMode(): boolean {
+    return getMapPublishingMode() === 'local'
+  }
+
+  private getCatalogReadyMessage(): string {
+    return this.isLocalPublishingMode()
+      ? 'Local map mode active. Saves write directly to public/maps. Commit and push when you want to publish permanently.'
+      : 'Published map catalog loaded.'
+  }
+
+  private getSaveProgressMessage(slot: number): string {
+    return this.isLocalPublishingMode()
+      ? `Saving ${formatLevelLabel(slot)} to local project files...`
+      : `Publishing ${formatLevelLabel(slot)} to GitHub...`
+  }
+
+  private getSaveSuccessMessage(slot: number): string {
+    return this.isLocalPublishingMode()
+      ? `${formatLevelLabel(slot)} saved locally to public/maps. Commit and push when you want it on GitHub Pages.`
+      : `${formatLevelLabel(slot)} published. GitHub Pages may take a minute to refresh.`
+  }
+
+  private getSaveFailureMessage(slot: number): string {
+    return this.isLocalPublishingMode()
+      ? `Unable to save ${formatLevelLabel(slot)} to local project files.`
+      : `Unable to publish ${formatLevelLabel(slot)}.`
+  }
+
+  private getDeleteProgressMessage(slot: number): string {
+    return this.isLocalPublishingMode()
+      ? `Clearing ${formatLevelLabel(slot)} from local project files...`
+      : `Clearing ${formatLevelLabel(slot)} on GitHub...`
+  }
+
+  private getDeleteSuccessMessage(slot: number): string {
+    return this.isLocalPublishingMode()
+      ? `${formatLevelLabel(slot)} cleared locally. Commit and push when you want that change on GitHub Pages.`
+      : `${formatLevelLabel(slot)} cleared. GitHub Pages may take a minute to refresh.`
+  }
+
+  private getDeleteFailureMessage(slot: number): string {
+    return this.isLocalPublishingMode()
+      ? `Unable to clear ${formatLevelLabel(slot)} from local project files.`
+      : `Unable to clear ${formatLevelLabel(slot)}.`
+  }
+
+  private getUploadProgressMessage(slot: number): string {
+    return this.isLocalPublishingMode()
+      ? `Uploading ${formatLevelLabel(slot)} into local project files...`
+      : `Uploading ${formatLevelLabel(slot)} to GitHub...`
+  }
+
+  private getUploadSuccessMessage(slot: number): string {
+    return this.isLocalPublishingMode()
+      ? `${formatLevelLabel(slot)} uploaded locally to public/maps. Commit and push when you want it on GitHub Pages.`
+      : `${formatLevelLabel(slot)} uploaded and published. GitHub Pages may take a minute to refresh.`
+  }
+
+  private getUploadFailureMessage(slot: number): string {
+    return this.isLocalPublishingMode()
+      ? `Unable to upload ${formatLevelLabel(slot)} into local project files.`
+      : `Unable to upload ${formatLevelLabel(slot)} to GitHub.`
+  }
+
+  private async getPublishTokenIfNeeded(reason: string): Promise<string | undefined> {
+    if (this.isLocalPublishingMode()) {
+      return undefined
+    }
+
+    return this.ensureGitHubToken(reason)
   }
 
   private async ensureGitHubToken(reason: string): Promise<string | undefined> {

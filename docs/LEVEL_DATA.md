@@ -133,15 +133,17 @@ rules and border-wall assumptions.
 
 - Canonical published maps live in `public/maps/`
 - The runtime fetches those files directly from the deployed static site
-- The editor publishes changes by writing the corresponding file through the
-  GitHub Contents API
+- On `localhost`, the editor publishes changes by writing the corresponding
+  file directly in `public/maps/` through a Vite-only endpoint
+- On GitHub Pages, the editor publishes changes by writing the corresponding
+  file through the GitHub Contents API
 - `Download` exports the exact slot-file JSON for the current map
 - `Upload` validates an incoming slot-file JSON and then publishes it back to
   the matching slot
 
 Inference from the implementation: persistence on GitHub Pages works because the
-site stays static for reads, while authenticated writes happen against the
-GitHub repository itself.
+site stays static for reads. Localhost writes go straight to the repo files, and
+hosted writes happen against the GitHub repository itself.
 
 ## Validation rules
 

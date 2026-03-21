@@ -7,9 +7,12 @@ import {
   createEmptyMapSlotFile,
   editableLevelFromLevel,
   getFirstAvailableCustomSlot,
+  getMapPublishingMode,
   getNextLevelSlot,
   listLevelSummaries,
   parseMapSlotFileText,
+  publishMapSlotFile,
+  requiresGitHubTokenForMapPublishing,
   serializeMapSlotFile,
   validateEditableLevel,
   validateMapSlotFileData
@@ -155,6 +158,47 @@ describe('levelRepository', () => {
     expect(await getNextLevelSlot(1, true)).toBe(2)
     expect(await getNextLevelSlot(2, true)).toBe(5)
     expect(await getFirstAvailableCustomSlot(true)).toBe(3)
+  })
+
+  it('writes map slot files locally on localhost without requiring a GitHub token', async () => {
+    const file = createPublishedMap(4, {
+      blocks: [{ x: 3, y: 3 }]
+    })
+    vi.stubGlobal('window', {
+      location: {
+        hostname: 'localhost'
+      }
+    })
+    const fetchSpy = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+
+      expect(url).toContain('__stoneage_local_maps/map04.json')
+      expect(init?.method).toBe('PUT')
+      expect(init?.body).toContain('"slot": 4')
+
+      return new Response(JSON.stringify(file), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    expect(getMapPublishingMode()).toBe('local')
+    expect(requiresGitHubTokenForMapPublishing()).toBe(false)
+    await expect(publishMapSlotFile(file)).resolves.toEqual(file)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('requires a GitHub token when publishing outside localhost mode', async () => {
+    await expect(publishMapSlotFile(createPublishedMap(6))).rejects.toThrow(
+      'Publishing on the hosted site requires a GitHub token with repository write access.'
+    )
   })
 
   it('requires both a player start and an exit before a map can be saved', () => {

@@ -62,6 +62,7 @@ Gameplay content and repository logic live here.
   - editor-friendly 10x10 authoring data
   - runtime `LevelData`
   - campaign slot ordering
+  - local file writes during `localhost` development
   - GitHub repository publication through the Contents API
 
 This keeps map loading, saving, uploading, downloading, and progression in one
@@ -111,8 +112,10 @@ Cross-module contracts live here.
 - saving routes through `levelRepository.ts`
 - the repository converts editor data into authored runtime `LevelData`
 - the repository wraps that level into a `MapSlotFile`
-- publishing writes the corresponding `public/maps/mapNN.json` through the
-  GitHub Contents API
+- on `localhost`, publishing writes the corresponding `public/maps/mapNN.json`
+  through a Vite-only local endpoint
+- on GitHub Pages, publishing writes the corresponding `public/maps/mapNN.json`
+  through the GitHub Contents API
 - upload parses and validates a JSON slot file before any publish occurs
 - download exports the current slot-file representation
 
@@ -143,10 +146,14 @@ Logical grid coordinates never change in response to viewport size changes.
 
 - Canonical published content lives in `public/maps/`
 - The deployed game reads those JSON files directly from GitHub Pages
-- Publishing from the editor requires a GitHub Personal Access Token with
-  repository contents write permission
-- The browser stores that token only in `sessionStorage` for the current tab
-- Writing a slot creates a commit on `main`
+- On `localhost`, the editor writes directly to `public/maps/` through a
+  Vite-only write endpoint
+- Those local file edits become permanent once they are committed and pushed
+- On GitHub Pages, publishing from the editor requires a GitHub Personal Access
+  Token with repository contents write permission
+- The browser stores that hosted-site token only in `sessionStorage` for the
+  current tab
+- Hosted-site writes create a commit on `main`
 - The existing Pages workflow redeploys the site after that push
 
 Inference from the implementation: GitHub Pages remains the static host, while

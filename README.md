@@ -46,8 +46,8 @@ The project combines:
 - Allows **Map 01** to be modified but never cleared
 - Allows **Maps 02-99** to be created, overwritten, uploaded, downloaded, or
   cleared
-- Publishes edits as `public/maps/mapNN.json` files through the GitHub Contents
-  API
+- On `localhost`, writes edits directly into `public/maps/mapNN.json`
+- On GitHub Pages, publishes edits through the GitHub Contents API
 - Validates uploaded JSON before any publish occurs
 - Refuses to save maps that are missing either the Player start or the Exit
 
@@ -188,11 +188,16 @@ npm run preview
   corresponding `mapNN.json`
 - `Save Map` publishes the current editor state to the selected slot
 - `Delete Map` clears slots `02-99` by publishing an empty slot file
-- The hosted site asks for a GitHub Personal Access Token with repository
-  contents write permission before publishing
-- That token is stored only in `sessionStorage` for the current browser tab
-- After publishing, GitHub Pages updates once the `main` push triggers the
-  Pages deployment workflow
+- On `http://localhost:3000/StoneAge/`, save/upload/delete write directly into
+  `public/maps/` without asking for a GitHub token
+- Those local file edits become permanent on GitHub after you commit and push
+  them
+- On the hosted site, publishing asks for a GitHub Personal Access Token with
+  repository contents write permission
+- That hosted-site token is stored only in `sessionStorage` for the current
+  browser tab
+- After hosted-site publishing, GitHub Pages updates once the `main` push
+  triggers the Pages deployment workflow
 
 ## Security and validation
 
@@ -227,8 +232,10 @@ Deployment notes:
 - `.github/workflows/deploy-pages.yml` deploys on pushes to `main`
 - `BootScene` loads assets through `import.meta.env.BASE_URL`
 - published map JSON files are served from `public/maps/`
-- browser-side publishing uses the GitHub Contents API, while GitHub Pages
-  remains the static host for the deployed site
+- local development uses a Vite-only write endpoint so the editor can update
+  `public/maps/` directly
+- browser-side publishing on GitHub Pages uses the GitHub Contents API, while
+  GitHub Pages remains the static host for the deployed site
 
 ## Maintenance rule
 

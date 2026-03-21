@@ -83,7 +83,8 @@ Current palette options:
 
 - start blank
 - use a chosen slot from **02** to **99**
-- publish into the corresponding `public/maps/mapNN.json`
+- on `localhost`, save directly into the corresponding `public/maps/mapNN.json`
+- on GitHub Pages, publish into the corresponding `public/maps/mapNN.json`
 
 ### Existing maps
 
@@ -121,8 +122,13 @@ Current palette options:
 
 ## GitHub publishing requirement
 
-Publishing actions require a GitHub Personal Access Token with permission to
-write repository contents for `tarikdsm/StoneAge`.
+When the editor is running on `localhost`, publishing actions do **not** require
+a GitHub token. They write directly into the local `public/maps/` directory so
+you can review, commit, and push those JSON files yourself.
+
+When the editor is running on GitHub Pages, publishing actions require a GitHub
+Personal Access Token with permission to write repository contents for
+`tarikdsm/StoneAge`.
 
 That applies to:
 
@@ -152,7 +158,10 @@ sequence used by the game.
 
 - Canonical maps live in `public/maps/`
 - GitHub Pages serves those JSON files to the game
-- Publishing writes commits to the GitHub repository through the Contents API
+- On `localhost`, the Vite dev/preview server writes those JSON files directly
+- Local edits become permanent on GitHub after you commit and push them
+- On GitHub Pages, publishing writes commits to the GitHub repository through
+  the Contents API
 - the Pages workflow redeploys the site after the push to `main`
 - published changes may take a short time to appear on the live site
 
@@ -170,7 +179,7 @@ On save or upload publish:
 
 ## Current limitations
 
-- publishing from the hosted site requires a GitHub token with write access
+- publishing from the hosted site still requires a GitHub token with write access
 - GitHub Pages refresh is not instantaneous after a publish
 - map names and objective text are still mostly generated automatically
 - only the current set of placeable items is supported
