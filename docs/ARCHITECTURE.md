@@ -30,6 +30,7 @@ Pure gameplay logic lives here.
 
 - `StageState.ts` is the authoritative real-time simulation model.
 - It owns movement, pushing, crush logic, enemy pursuit, and win/lose state.
+- It also owns non-visual block-destruction rules for jammed blocks.
 - It has no Phaser dependency.
 - It is advanced only through `stepStageState(level, state, input, deltaMs)`.
 
@@ -68,7 +69,8 @@ This keeps map loading, saving, and progression in one place.
 Input systems convert raw browser/device input into normalized intent.
 
 - keyboard, mouse, and touch are interpreted here
-- the result is gameplay intent, not direct state mutation
+- the result is gameplay intent, including both continuous movement direction
+  and one-shot movement/push attempts
 - both campaign play and scene logic depend on this clean boundary
 
 ### `src/game/utils`

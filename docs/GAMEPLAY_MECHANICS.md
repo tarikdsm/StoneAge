@@ -30,6 +30,9 @@ This preserves readable/testable rules without falling back to hidden turns.
 - holding movement starts the next lane segment as soon as the current segment
   finishes
 - enemies use the same lane-based real-time movement model
+- when the player is pressed against a block that cannot move because of a
+  wall, column, or another block, a second movement attempt in the same
+  direction destroys that block
 
 ## Push rules
 
@@ -40,6 +43,8 @@ This preserves readable/testable rules without falling back to hidden turns.
 - if an enemy occupies that destination cell, the enemy is crushed
 - the player does not slide with the block
 - pushes are rate-limited by a short push cooldown
+- blocks that are truly jammed do not slide; instead, they can be shattered by
+  the second move attempt against them
 
 ## Enemy behavior
 

@@ -13,6 +13,8 @@ The project combines:
 ## Current feature set
 
 - Real-time grid-aware movement, pushing, and crush rules
+- Immovable blocks can be shattered after the player leans into them and tries
+  the same move a second time
 - Campaign progression that starts at Map 01 and advances to the next available
   map number
 - Menu hub with separate `Play` and `Generate Maps` flows

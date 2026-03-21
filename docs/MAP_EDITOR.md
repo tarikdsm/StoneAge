@@ -24,7 +24,9 @@ The editor is organized into three areas:
 ### Left panel
 
 - current editing mode and target save slot
-- `New Map` action at the top
+- a separate counts/status block for Player, Exit, Blocks, Columns, and NPCs
+- `New Map` action in its own section
+- dividers separating summary, counts, `New Map`, and `Maps`
 - list of existing maps
 - pagination controls for the map list when more than one page exists
 
@@ -39,7 +41,9 @@ Clicking a listed map loads it for editing.
 ### Right panel
 
 - selected-tool hint text
+- dividers separating hint, palette, and save/action areas
 - placement tools
+- save-slot label positioned above the save-slot controls
 - save-slot controls for new maps
 - save action
 - delete action

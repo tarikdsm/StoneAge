@@ -208,6 +208,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncActors(): void {
+    const activeBlockIds = new Set(this.state.blocks.map((block) => block.id))
+    for (const [blockId, blockActor] of this.blocks) {
+      if (activeBlockIds.has(blockId)) {
+        continue
+      }
+
+      blockActor.explode()
+      this.blocks.delete(blockId)
+    }
+
     this.player.syncFromState(this.state.player)
 
     for (const block of this.state.blocks) {
@@ -237,7 +247,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.statusPulse) {
       this.statusPulse.setFillStyle(this.state.status === 'lost' ? 0xfb7185 : this.state.status === 'won' ? 0xfacc15 : 0x38bdf8, 0.22)
-      if (outcome.pushedBlockId || outcome.crushedEnemyIds.length > 0 || outcome.statusChanged) {
+      if (outcome.pushedBlockId || outcome.destroyedBlockId || outcome.crushedEnemyIds.length > 0 || outcome.statusChanged) {
         this.tweens.add({
           targets: this.statusPulse,
           alpha: 0.05,
@@ -249,6 +259,10 @@ export class GameScene extends Phaser.Scene {
 
     if (outcome.crushedEnemyIds.length > 0) {
       this.cameras.main.shake(90, 0.002)
+    }
+
+    if (outcome.destroyedBlockId) {
+      this.cameras.main.shake(120, 0.003)
     }
 
     if (outcome.statusChanged && this.state.status === 'lost') {

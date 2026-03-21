@@ -24,7 +24,16 @@ const testLevel: LevelData = {
   ]
 }
 
-function advance(level: LevelData, state = createStageState(level), steps = 1, input: { moveDirection?: 'up' | 'down' | 'left' | 'right'; pushDirection?: 'up' | 'down' | 'left' | 'right' } = {}): typeof state {
+function advance(
+  level: LevelData,
+  state = createStageState(level),
+  steps = 1,
+  input: {
+    moveDirection?: 'up' | 'down' | 'left' | 'right'
+    moveAttemptDirection?: 'up' | 'down' | 'left' | 'right'
+    pushDirection?: 'up' | 'down' | 'left' | 'right'
+  } = {}
+): typeof state {
   for (let index = 0; index < steps; index += 1) {
     stepStageState(level, state, input, 200)
   }
@@ -78,6 +87,24 @@ describe('StageState real-time simulation', () => {
 
     stepStageState(crushLevel, state, {}, 200)
     expect(state.blocks[0]?.gridPosition).toEqual({ x: 4, y: 3 })
+  })
+
+  it('destroys an immovable block on the second movement attempt against it', () => {
+    const jammedLevel: LevelData = {
+      ...testLevel,
+      enemies: [],
+      walls: [...(testLevel.walls ?? []), { x: 4, y: 3 }]
+    }
+    const state = createStageState(jammedLevel)
+
+    const firstOutcome = stepStageState(jammedLevel, state, { moveDirection: 'right', moveAttemptDirection: 'right' }, 16)
+    expect(firstOutcome.destroyedBlockId).toBeUndefined()
+    expect(state.blocks).toHaveLength(1)
+
+    const secondOutcome = stepStageState(jammedLevel, state, { moveDirection: 'right', moveAttemptDirection: 'right' }, 16)
+    expect(secondOutcome.destroyedBlockId).toBe('block-0')
+    expect(state.blocks).toHaveLength(0)
+    expect(state.player.gridPosition).toEqual({ x: 2, y: 3 })
   })
 
   it('marks the game as lost when a moving enemy reaches the player without a player turn', () => {

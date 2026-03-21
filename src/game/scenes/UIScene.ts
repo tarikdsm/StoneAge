@@ -38,6 +38,7 @@ export class UIScene extends Phaser.Scene {
       .setStrokeStyle(2, 0x38bdf8, 0.14)
 
     this.menuButton = this.add.rectangle(0, 0, 10, 10, 0x1e293b, 1)
+      .setOrigin(0)
       .setStrokeStyle(2, 0x38bdf8, 0.28)
       .setInteractive({ useHandCursor: true })
 

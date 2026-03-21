@@ -48,12 +48,18 @@ const TOOL_LABELS: Record<EditorTool, string> = {
  */
 export class MapEditorScene extends Phaser.Scene {
   private readonly storage = createBrowserStorage()
+  private readonly sectionDividerColor = 0x38bdf8
   private background?: Phaser.GameObjects.Rectangle
   private headerPanel?: Phaser.GameObjects.Rectangle
   private leftPanel?: Phaser.GameObjects.Rectangle
   private rightPanel?: Phaser.GameObjects.Rectangle
   private boardFrame?: Phaser.GameObjects.Rectangle
   private boardFill?: Phaser.GameObjects.Rectangle
+  private leftTitleDivider?: Phaser.GameObjects.Rectangle
+  private leftCountsDivider?: Phaser.GameObjects.Rectangle
+  private leftMapsDivider?: Phaser.GameObjects.Rectangle
+  private rightHintDivider?: Phaser.GameObjects.Rectangle
+  private rightActionDivider?: Phaser.GameObjects.Rectangle
   private titleText?: Phaser.GameObjects.Text
   private statusText?: Phaser.GameObjects.Text
   private leftTitleText?: Phaser.GameObjects.Text
@@ -103,6 +109,11 @@ export class MapEditorScene extends Phaser.Scene {
       .setStrokeStyle(3, 0x38bdf8, 0.24)
     this.boardFill = this.add.rectangle(0, 0, 10, 10, 0x08111d, 1).setOrigin(0)
       .setStrokeStyle(2, 0x1e293b, 0.8)
+    this.leftTitleDivider = this.createDivider()
+    this.leftCountsDivider = this.createDivider()
+    this.leftMapsDivider = this.createDivider()
+    this.rightHintDivider = this.createDivider()
+    this.rightActionDivider = this.createDivider()
 
     this.titleText = this.add.text(0, 0, 'MAP GENERATOR', {
       fontFamily: 'Arial',
@@ -203,10 +214,37 @@ export class MapEditorScene extends Phaser.Scene {
     const boardLeft = boardAreaLeft + (boardAreaWidth - boardSide) / 2
     const boardTop = contentTop + (contentHeight - boardSide) / 2
     const buttonHeight = clamp(height * 0.055, 34, 46)
+    const smallButtonHeight = clamp(height * 0.048, 32, 40)
     const listButtonGap = 8
-    const editorInfoTop = contentTop + 44
-    const mapListTop = contentTop + 152
-    const listAvailableHeight = contentHeight - 238
+    const dividerInset = 14
+    const dividerWidth = panelWidth - dividerInset * 2
+    const dividerHeight = 2
+    const leftSectionTop = contentTop + 44
+    const leftTitleSectionHeight = clamp(height * 0.095, 44, 58)
+    const leftCountsSectionHeight = clamp(height * 0.13, 58, 86)
+    const leftTitleDividerY = leftSectionTop + leftTitleSectionHeight
+    const leftCountsTop = leftTitleDividerY + 14
+    const leftCountsDividerY = leftCountsTop + leftCountsSectionHeight
+    const leftButtonTop = leftCountsDividerY + 14
+    const leftMapsDividerY = leftButtonTop + buttonHeight + 16
+    const pageButtonY = contentTop + contentHeight - 54
+    const paginationY = pageButtonY - 22
+    const mapListTitleY = leftMapsDividerY + 14
+    const mapListTop = mapListTitleY + 28
+    const listAvailableHeight = Math.max(72, paginationY - 16 - mapListTop)
+    const rightSectionTop = contentTop + 44
+    const hintSectionHeight = clamp(height * 0.12, 74, 96)
+    const rightHintDividerY = rightSectionTop + hintSectionHeight
+    const actionSectionHeight = 182
+    const actionSectionTop = contentTop + contentHeight - actionSectionHeight
+    const toolAreaTop = rightHintDividerY + 18
+    const toolAreaBottom = actionSectionTop - 16
+    const toolGap = 8
+    const toolButtonHeight = clamp(
+      (toolAreaBottom - toolAreaTop - toolGap * (TOOL_ORDER.length - 1)) / TOOL_ORDER.length,
+      30,
+      buttonHeight
+    )
 
     this.listPageSize = Math.max(4, Math.floor(listAvailableHeight / (buttonHeight + listButtonGap)))
     this.listPage = Math.min(this.listPage, Math.max(0, this.getPageCount() - 1))
@@ -230,43 +268,63 @@ export class MapEditorScene extends Phaser.Scene {
       .setWordWrapWidth(width * 0.74)
 
     this.leftTitleText
-      ?.setPosition(padding + 14, contentTop + 12)
-      .setFontSize(clamp(width * 0.018, 16, 22))
+      ?.setPosition(padding + 14, mapListTitleY)
+      .setFontSize(clamp(width * 0.016, 15, 20))
 
     this.rightTitleText
       ?.setPosition(width - padding - panelWidth + 14, contentTop + 12)
       .setFontSize(clamp(width * 0.018, 16, 22))
 
     this.editorTitleText
-      ?.setPosition(padding + 14, editorInfoTop)
+      ?.setPosition(padding + 14, leftSectionTop)
       .setOrigin(0, 0)
       .setFontSize(clamp(width * 0.014, 13, 18))
       .setWordWrapWidth(panelWidth - 28)
 
     this.countsText
-      ?.setPosition(padding + 14, editorInfoTop + 28)
+      ?.setPosition(padding + 14, leftCountsTop)
       .setOrigin(0, 0)
       .setFontSize(clamp(width * 0.0105, 10, 13))
       .setWordWrapWidth(panelWidth - 28)
 
     this.slotText
-      ?.setPosition(width - padding - panelWidth / 2, contentTop + contentHeight - 112)
+      ?.setPosition(width - padding - panelWidth / 2, actionSectionTop + 18)
       .setFontSize(clamp(width * 0.013, 12, 16))
 
     this.toolHintText
-      ?.setPosition(width - padding - panelWidth + 14, contentTop + 44)
+      ?.setPosition(width - padding - panelWidth + 14, rightSectionTop)
       .setFontSize(clamp(width * 0.011, 11, 14))
       .setWordWrapWidth(panelWidth - 28)
 
     this.paginationText
-      ?.setPosition(padding + panelWidth / 2, contentTop + contentHeight - 76)
+      ?.setPosition(padding + panelWidth / 2, paginationY)
       .setFontSize(clamp(width * 0.011, 11, 14))
       .setVisible(this.getPageCount() > 1)
 
+    this.leftTitleDivider
+      ?.setPosition(padding + dividerInset, leftTitleDividerY)
+      .setSize(dividerWidth, dividerHeight)
+
+    this.leftCountsDivider
+      ?.setPosition(padding + dividerInset, leftCountsDividerY)
+      .setSize(dividerWidth, dividerHeight)
+
+    this.leftMapsDivider
+      ?.setPosition(padding + dividerInset, leftMapsDividerY)
+      .setSize(dividerWidth, dividerHeight)
+
+    this.rightHintDivider
+      ?.setPosition(width - padding - panelWidth + dividerInset, rightHintDividerY)
+      .setSize(dividerWidth, dividerHeight)
+
+    this.rightActionDivider
+      ?.setPosition(width - padding - panelWidth + dividerInset, actionSectionTop)
+      .setSize(dividerWidth, dividerHeight)
+
     this.setButtonLayout(this.backButton, padding, 18, 88, 38, clamp(width * 0.0115, 11, 14))
-    this.setButtonLayout(this.newButton, padding + 14, contentTop + 100, panelWidth - 28, buttonHeight, clamp(width * 0.0115, 11, 14))
-    this.setButtonLayout(this.previousPageButton, padding + 14, contentTop + contentHeight - 54, (panelWidth - 36) / 2, 38, clamp(width * 0.0115, 11, 14))
-    this.setButtonLayout(this.nextPageButton, padding + 22 + (panelWidth - 36) / 2, contentTop + contentHeight - 54, (panelWidth - 36) / 2, 38, clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.newButton, padding + 14, leftButtonTop, panelWidth - 28, buttonHeight, clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.previousPageButton, padding + 14, pageButtonY, (panelWidth - 36) / 2, 38, clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.nextPageButton, padding + 22 + (panelWidth - 36) / 2, pageButtonY, (panelWidth - 36) / 2, 38, clamp(width * 0.0115, 11, 14))
 
     this.rebuildMapButtons()
     let mapButtonY = mapListTop
@@ -277,18 +335,18 @@ export class MapEditorScene extends Phaser.Scene {
 
     const toolButtonWidth = panelWidth - 28
     const toolButtonX = width - padding - panelWidth + 14
-    let toolButtonY = contentTop + 124
+    let toolButtonY = toolAreaTop
     for (const tool of TOOL_ORDER) {
-      this.setButtonLayout(this.toolButtons.get(tool), toolButtonX, toolButtonY, toolButtonWidth, buttonHeight, clamp(width * 0.0115, 11, 14))
-      toolButtonY += buttonHeight + 8
+      this.setButtonLayout(this.toolButtons.get(tool), toolButtonX, toolButtonY, toolButtonWidth, toolButtonHeight, clamp(width * 0.0115, 11, 14))
+      toolButtonY += toolButtonHeight + toolGap
     }
 
-    const slotButtonY = contentTop + contentHeight - 144
+    const slotButtonY = actionSectionTop + 52
     const slotButtonWidth = Math.max(34, (panelWidth - 92) / 2)
-    this.setButtonLayout(this.slotMinusButton, toolButtonX, slotButtonY, slotButtonWidth, 38, 18)
-    this.setButtonLayout(this.slotPlusButton, width - padding - 14 - slotButtonWidth, slotButtonY, slotButtonWidth, 38, 18)
-    this.setButtonLayout(this.saveButton, toolButtonX, contentTop + contentHeight - 96, toolButtonWidth, 40, clamp(width * 0.0115, 11, 14))
-    this.setButtonLayout(this.deleteButton, toolButtonX, contentTop + contentHeight - 48, toolButtonWidth, 38, clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.slotMinusButton, toolButtonX, slotButtonY, slotButtonWidth, smallButtonHeight, 18)
+    this.setButtonLayout(this.slotPlusButton, width - padding - 14 - slotButtonWidth, slotButtonY, slotButtonWidth, smallButtonHeight, 18)
+    this.setButtonLayout(this.saveButton, toolButtonX, slotButtonY + smallButtonHeight + 12, toolButtonWidth, 40, clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.deleteButton, toolButtonX, slotButtonY + smallButtonHeight + 60, toolButtonWidth, 38, clamp(width * 0.0115, 11, 14))
 
     this.gridOrigin = {
       x: boardLeft,
@@ -392,6 +450,10 @@ export class MapEditorScene extends Phaser.Scene {
     }
   }
 
+  private createDivider(): Phaser.GameObjects.Rectangle {
+    return this.add.rectangle(0, 0, 10, 2, this.sectionDividerColor, 0.28).setOrigin(0)
+  }
+
   private refreshMapSummaries(): void {
     this.mapSummaries = listLevelSummaries(this.storage)
     this.listPage = Math.min(this.listPage, Math.max(0, this.getPageCount() - 1))
@@ -470,12 +532,16 @@ export class MapEditorScene extends Phaser.Scene {
 
   private renderEditor(): void {
     const title = this.editorMode === 'new'
-      ? `NEW MAP - SAVE AS ${formatLevelLabel(this.editorState.slot)}`
-      : `EDITING ${formatLevelLabel(this.editorState.slot)}`
+      ? ['NEW MAP', `Save as ${formatLevelLabel(this.editorState.slot)}`].join('\n')
+      : ['EDITING', formatLevelLabel(this.editorState.slot)].join('\n')
 
     this.editorTitleText?.setText(title)
     this.countsText?.setText(
-      `Player ${this.editorState.playerSpawn ? '1' : '0'} | Blocks ${this.editorState.blocks.length} | Columns ${this.editorState.columns.length} | NPCs ${this.editorState.enemies.length} | Exit ${this.editorState.exit ? '1' : '0'}`
+      [
+        `Player ${this.editorState.playerSpawn ? '1' : '0'} | Exit ${this.editorState.exit ? '1' : '0'}`,
+        `Blocks ${this.editorState.blocks.length} | Columns ${this.editorState.columns.length}`,
+        `NPCs ${this.editorState.enemies.length}`
+      ].join('\n')
     )
     this.slotText?.setText(
       this.editorMode === 'new'
