@@ -62,6 +62,16 @@ This preserves readable/testable rules without falling back to hidden turns.
 - on touch devices, a strong tap on an adjacent block triggers the same launch
   action
 
+## Block replenishment
+
+- original authored blocks remain the main resource for controlling enemies
+- once every original block has been destroyed, the stage starts spawning a new
+  block into a random empty playable cell every 10 seconds
+- respawned blocks fade in from transparent to fully opaque so the player can
+  read the new resource entering the board
+- respawned blocks use the same movement, push, launch, crush, and destruction
+  rules as authored blocks
+
 ## Enemy behavior
 
 - enemies pursue the player continuously

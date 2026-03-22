@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { BLOCK_RESPAWN_FADE_MS } from '../core/StageState'
 import { GridActor } from './GridActor'
 import type { BlockState } from '../core/StageState'
 import type { GridPoint } from '../types/level'
@@ -31,6 +32,10 @@ export class Block extends GridActor {
     }
 
     this.syncToGrid(state.worldPosition)
+    const materializeProgress = Phaser.Math.Clamp(state.fadeInMs / BLOCK_RESPAWN_FADE_MS, 0, 1)
+    this.setAlpha(materializeProgress)
+    this.setScale(0.9 + materializeProgress * 0.1)
+
     if (state.slideDirection && state.motion) {
       const laneProgress = state.motion.progress
       const tilt = Math.sin(laneProgress * Math.PI * 2) * 7

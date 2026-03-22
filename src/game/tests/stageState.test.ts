@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { createStageState, stepStageState, type EnemyState, type StageState } from '../core/StageState'
+import {
+  BLOCK_RESPAWN_FADE_MS,
+  BLOCK_RESPAWN_INTERVAL_MS,
+  createStageState,
+  stepStageState,
+  type EnemyState,
+  type StageState
+} from '../core/StageState'
 import type { LevelData } from '../types/level'
 import { RUNTIME_BOARD_HEIGHT, RUNTIME_BOARD_WIDTH, createRuntimeBorderWalls } from '../utils/boardGeometry'
 
@@ -26,6 +33,17 @@ function activateEnemies(state: StageState): void {
     }
     enemy.phase = 'active'
     enemy.phaseTimerMs = 0
+  }
+}
+
+function keepEnemiesDormant(state: StageState): void {
+  for (const enemy of state.enemies) {
+    if (!enemy.alive) {
+      continue
+    }
+
+    enemy.phase = 'spawning'
+    enemy.phaseTimerMs = 60000
   }
 }
 
@@ -161,6 +179,71 @@ describe('StageState real-time simulation', () => {
     expect(outcome.destroyedBlockIds).toEqual(['block-0'])
     expect(state.blocks).toHaveLength(0)
     expect(state.player.gridPosition).toEqual({ x: 3, y: 5 })
+  })
+
+  it('does not spawn replacement blocks before every original block is gone', () => {
+    const level = createCanonicalTestLevel({
+      enemies: [{ type: 'basic', x: 10, y: 10 }]
+    })
+    const state = createStageState(level)
+    keepEnemiesDormant(state)
+
+    const outcome = stepStageState(level, state, {}, BLOCK_RESPAWN_INTERVAL_MS + 250)
+    expect(outcome.spawnedBlockIds).toEqual([])
+    expect(state.blocks).toHaveLength(1)
+    expect(state.blocks[0]?.source).toBe('original')
+    expect(state.blockRespawnTimerMs).toBe(BLOCK_RESPAWN_INTERVAL_MS)
+  })
+
+  it('spawns a new fading block every ten seconds after the original stock is gone', () => {
+    const level = createCanonicalTestLevel({
+      blocks: [],
+      enemies: [{ type: 'basic', x: 10, y: 10 }]
+    })
+    const state = createStageState(level)
+    keepEnemiesDormant(state)
+
+    const firstSpawn = stepStageState(level, state, {}, BLOCK_RESPAWN_INTERVAL_MS)
+    expect(firstSpawn.spawnedBlockIds).toEqual(['respawn-block-0'])
+    expect(state.blocks).toHaveLength(1)
+    expect(state.blocks[0]?.source).toBe('respawned')
+    expect(state.blocks[0]?.fadeInMs).toBe(0)
+
+    stepStageState(level, state, {}, Math.floor(BLOCK_RESPAWN_FADE_MS / 2))
+    expect(state.blocks[0]?.fadeInMs).toBe(Math.floor(BLOCK_RESPAWN_FADE_MS / 2))
+
+    const secondSpawn = stepStageState(level, state, {}, BLOCK_RESPAWN_INTERVAL_MS)
+    expect(secondSpawn.spawnedBlockIds).toEqual(['respawn-block-1'])
+    expect(state.blocks).toHaveLength(2)
+    expect(state.blocks[1]?.source).toBe('respawned')
+    expect(state.blocks[1]?.fadeInMs).toBe(0)
+  })
+
+  it('respawns replacement blocks only on empty playable cells', () => {
+    const reservedCells = new Set(['1,1', '6,6', '10,10'])
+    const internalWalls = [] as Array<{ x: number; y: number }>
+    for (let y = 1; y <= 10; y += 1) {
+      for (let x = 1; x <= 10; x += 1) {
+        if (reservedCells.has(`${x},${y}`)) {
+          continue
+        }
+
+        internalWalls.push({ x, y })
+      }
+    }
+
+    const level = createCanonicalTestLevel({
+      playerSpawn: { x: 1, y: 1 },
+      blocks: [],
+      enemies: [{ type: 'basic', x: 10, y: 10 }],
+      walls: [...createRuntimeBorderWalls(), ...internalWalls]
+    })
+    const state = createStageState(level)
+    keepEnemiesDormant(state)
+
+    const outcome = stepStageState(level, state, {}, BLOCK_RESPAWN_INTERVAL_MS)
+    expect(outcome.spawnedBlockIds).toEqual(['respawn-block-0'])
+    expect(state.blocks[0]?.gridPosition).toEqual({ x: 6, y: 6 })
   })
 
   it('hatches enemies over time before they join the chase', () => {

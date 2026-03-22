@@ -21,6 +21,8 @@ The project combines:
 - Jammed blocks that are destroyed immediately by the push action
 - Space plus a direction launches an adjacent block that can carry enemies
   until they are crushed against solid obstacles, including multi-kill chains
+- When the original block stock is exhausted, fresh blocks respawn into random
+  playable cells every 10 seconds so the stage never becomes unwinnable
 - Campaign progression from Map 01 to the next non-empty published slot
 - Menu hub with `Play` and `Generate Maps`
 - Always-available in-game `Menu` button
