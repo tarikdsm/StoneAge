@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
@@ -19,16 +19,22 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
     def __init__(
         self,
         map_id: str = "map01",
+        map_ids: Optional[Sequence[str]] = None,
+        curriculum_mode: str = "single",
         max_decision_steps: int = 600,
         decision_repeat: int = 4,
         seed: Optional[int] = None,
     ) -> None:
         super().__init__()
-        self.map_id = map_id
+        self.map_ids = self._resolve_map_ids(map_id, map_ids)
+        self.curriculum_mode = self._normalize_curriculum_mode(curriculum_mode)
+        self.map_id = self.map_ids[0]
+        self.current_map_id = self.map_id
         self.max_decision_steps = max_decision_steps
         self.decision_repeat = decision_repeat
+        self._rotation_index = 0
         self.bridge = StoneAgeTSBridge(
-            map_id=map_id,
+            map_id=self.current_map_id,
             max_decision_steps=max_decision_steps,
             seed=seed,
         )
@@ -51,12 +57,14 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
         options: Optional[Dict[str, Any]] = None,
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
         super().reset(seed=seed)
-        map_id = self.map_id if options is None else options.get("map_id", self.map_id)
+        map_id = self._resolve_reset_map_id(options)
+        self.current_map_id = map_id
         response = self.bridge.request(
             {
                 "type": "reset",
                 "mapId": map_id,
                 "seed": seed,
+                "maxDecisionSteps": self.max_decision_steps,
             }
         )
         info = self._extract_info(response["info"])
@@ -129,6 +137,8 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
             "cleared": bool(raw_info["cleared"]),
             "dead": bool(raw_info["dead"]),
             "kills": int(raw_info["kills"]),
+            "enemies_alive": int(raw_info["enemies_alive"]),
+            "blocks_active": int(raw_info["blocks_active"]),
             "raw_score": int(raw_info["raw_score"]),
             "decision_steps": int(raw_info["decision_steps"]),
             "sim_steps": int(raw_info["sim_steps"]),
@@ -164,3 +174,28 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
             reward -= 5.0
 
         return reward
+
+    def _resolve_map_ids(self, map_id: str, map_ids: Optional[Sequence[str]]) -> list[str]:
+        candidates = [str(candidate).strip() for candidate in (map_ids or [map_id]) if str(candidate).strip()]
+        if not candidates:
+            raise StoneAgeBridgeError("StoneAgeEnv requires at least one map id.")
+        return candidates
+
+    def _normalize_curriculum_mode(self, curriculum_mode: str) -> str:
+        normalized = curriculum_mode.strip().lower()
+        if normalized not in {"single", "rotation"}:
+            raise StoneAgeBridgeError(
+                f"Unsupported curriculum mode '{curriculum_mode}'. Expected 'single' or 'rotation'."
+            )
+        return normalized
+
+    def _resolve_reset_map_id(self, options: Optional[Dict[str, Any]]) -> str:
+        if options is not None and options.get("map_id") is not None:
+            return str(options["map_id"])
+
+        if self.curriculum_mode == "rotation" and len(self.map_ids) > 1:
+            map_id = self.map_ids[self._rotation_index % len(self.map_ids)]
+            self._rotation_index += 1
+            return map_id
+
+        return self.map_ids[0]

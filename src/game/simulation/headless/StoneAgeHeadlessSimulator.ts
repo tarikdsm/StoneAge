@@ -69,6 +69,8 @@ export interface HeadlessStepInfo {
   cleared: boolean
   dead: boolean
   kills: number
+  enemies_alive: number
+  blocks_active: number
   raw_score: number
   decision_steps: number
   sim_steps: number
@@ -175,6 +177,7 @@ export class StoneAgeHeadlessSimulator {
     const observation = buildObservation(this.level, this.state, this.runProgress.score)
     const terminated = this.state.status !== 'playing'
     const truncated = !terminated && this.decisionSteps >= this.maxDecisionSteps
+    const enemiesAlive = this.state.enemies.filter((enemy) => enemy.alive).length
 
     return {
       observation,
@@ -186,6 +189,8 @@ export class StoneAgeHeadlessSimulator {
         cleared: this.state.status === 'won',
         dead: this.state.status === 'lost',
         kills: this.kills,
+        enemies_alive: enemiesAlive,
+        blocks_active: this.state.blocks.length,
         raw_score: this.runProgress.score,
         decision_steps: this.decisionSteps,
         sim_steps: this.simSteps,

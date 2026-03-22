@@ -36,6 +36,8 @@ describe('StoneAgeHeadlessSimulator', () => {
     expect(result.observation.grid).toHaveLength(100)
     expect(result.observation.player_position).toEqual([4, 7])
     expect(result.info.map_id).toBe('map01')
+    expect(result.info.enemies_alive).toBe(1)
+    expect(result.info.blocks_active).toBe(1)
     expect(result.info.raw_score).toBe(0)
     expect(result.terminated).toBe(false)
     expect(result.truncated).toBe(false)

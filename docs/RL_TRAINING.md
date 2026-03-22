@@ -19,17 +19,28 @@ This avoids reimplementing gameplay rules in Python.
 - `src/game/simulation/headless/StoneAgeHeadlessSimulator.ts`
   Pure wrapper around `StageState.ts` and `RunProgress.ts`
 - `trainer_bridge/stoneage_sim_server.ts`
-  Local Node bridge that loads `map01`, accepts JSON-line commands, and returns
+  Local Node bridge that loads the current headless training rollout maps
+  (`map01`, `map02`, `map03`), accepts JSON-line commands, and returns
   structured simulation results
+- `src/game/data/mapSlotCodec.ts`
+  Shared slot-file parser/validator reused by both the browser repository and
+  the Node bridge
+- `src/game/data/publishedMapLoader.ts`
+  Shared published-map loader used by the RL bridge to turn `public/maps/*.json`
+  into validated runtime `LevelData`
 
 ### Python side
 
 - `trainer/ts_bridge.py`
   Subprocess management and JSON-line request/response handling
 - `trainer/stoneage_env.py`
-  Gymnasium environment backed by the TypeScript simulator process
+  Gymnasium environment backed by the TypeScript simulator process, with
+  single-map or rotating-map curriculum support
 - `trainer/train_ppo.py`
-  PPO smoke test and first training entrypoint
+  PPO smoke test and training entrypoint for one map or a simple rotation
+- `trainer/evaluate_policy.py`
+  Formal multi-episode evaluation for random and PPO agents, including JSON
+  reports under `trainer/eval_reports/`
 
 ## Protocol
 
@@ -110,6 +121,20 @@ The TypeScript simulator returns a structured numeric observation containing:
 The Gymnasium environment converts that structure into a fixed `numpy` vector
 of length `114`.
 
+The per-step `info` payload also exposes:
+
+- `map_id`
+- `kills`
+- `enemies_alive`
+- `blocks_active`
+- `raw_score`
+- `decision_steps`
+- `sim_steps`
+- `cleared`
+- `dead`
+- `action_effective`
+- `state_signature`
+
 ## Reward model
 
 The PPO environment does not train directly on the visible game score.
@@ -137,9 +162,11 @@ The headless simulator is deterministic relative to:
 
 ## Current limitations
 
-- the bridge currently loads only `map01`
+- the bridge currently supports only the first training rollout set:
+  `map01`, `map02`, and `map03`
 - the Node bridge uses a lightweight published-map validation path instead of
-  the full browser repository loader
+  the browser repository loader itself, but it now reuses the same authoritative
+  slot-file parser and structural validation contract
 - the observation is intentionally simple and vector-first; it is not yet a
   richer multi-channel tensor
 - PPO currently defaults to `device=cpu` in `train_ppo.py` because this first
@@ -163,5 +190,11 @@ npm run sim:server
 Short PPO smoke run:
 
 ```bash
-trainer/.venv/Scripts/python.exe trainer/train_ppo.py --timesteps 2048 --device cpu
+trainer/.venv/Scripts/python.exe trainer/train_ppo.py --map-ids map01,map02,map03 --curriculum rotation --timesteps 2048 --device cpu
+```
+
+Formal evaluation:
+
+```bash
+trainer/.venv/Scripts/python.exe trainer/evaluate_policy.py --agents random,ppo --map-ids map01,map02,map03 --curriculum rotation --episodes 9 --model-path trainer/models/ppo_stoneage_rotation_map01_map02_map03.zip
 ```

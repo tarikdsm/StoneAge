@@ -11,6 +11,8 @@ Current scope:
   subprocess
 - provide a first Gymnasium + PPO baseline without reimplementing rules in
   Python
+- evaluate trained policies across multiple published maps with JSON reports
+- support a first curriculum step with single-map or rotating-map training
 
 Current files:
 
@@ -21,12 +23,15 @@ Current files:
 - `stoneage_env.py`
   Gymnasium environment backed by the real TypeScript simulation
 - `train_ppo.py`
-  PPO entrypoint with smoke test, checkpoints, and TensorBoard logs
+  PPO entrypoint with smoke test, checkpoints, TensorBoard logs, and simple
+  map rotation
+- `evaluate_policy.py`
+  Multi-episode evaluation for random or PPO agents, with terminal summaries
+  and JSON reports under `eval_reports/`
 
 Planned next training files:
 
 - `stoneage_env_wrappers.py`
-- `evaluate_policy.py`
 - `export_policy.py`
 - `replay_dataset.py`
 - `curriculum_runner.py`
