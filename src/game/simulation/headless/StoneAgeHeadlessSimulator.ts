@@ -9,6 +9,7 @@ import {
   type SimulationInput,
   type StageState
 } from '../../core/StageState'
+import { RuleBasedPlayerPolicy } from '../../systems/ai/RuleBasedPlayerPolicy'
 import type { Direction, LevelData } from '../../types/level'
 import {
   PLAYABLE_AREA_HEIGHT,
@@ -110,6 +111,8 @@ export class StoneAgeHeadlessSimulator {
   private decisionSteps = 0
   private simSteps = 0
   private kills = 0
+  private stochasticTeacher = createTeacherPolicy(() => 0.5, true)
+  private deterministicTeacher = createTeacherPolicy(() => 0, false)
 
   constructor(config: HeadlessSimulatorConfig) {
     this.mapId = config.mapId
@@ -124,6 +127,8 @@ export class StoneAgeHeadlessSimulator {
   reset(seed = this.baseSeed): HeadlessStepResult {
     this.baseSeed = seed
     this.state = createStageState(this.level, { seed })
+    this.stochasticTeacher = createTeacherPolicy(createSeededRandom(this.state.rngSeed), true)
+    this.deterministicTeacher = createTeacherPolicy(() => 0, false)
     this.runProgress = createRunProgressState()
     this.decisionSteps = 0
     this.simSteps = 0
@@ -167,6 +172,11 @@ export class StoneAgeHeadlessSimulator {
 
   close(): void {
     this.runProgress = createRunProgressState()
+  }
+
+  getHeuristicAction(deterministic = true): number {
+    const input = (deterministic ? this.deterministicTeacher : this.stochasticTeacher).decide(this.level, this.state)
+    return mapSimulationInputToAction(input, this.state.player.facing)
   }
 
   private isTerminal(): boolean {
@@ -229,6 +239,26 @@ export function mapActionToSimulationInput(action: number, facing: Direction): S
     default:
       throw new Error(`Unsupported action ${action}. Expected a value between 0 and 9.`)
   }
+}
+
+export function mapSimulationInputToAction(input: SimulationInput, facing: Direction): number {
+  if (!input.moveDirection && !input.throwDirection) {
+    return 0
+  }
+
+  if (input.moveDirection && !input.throwDirection) {
+    return directionToMoveAction(input.moveDirection)
+  }
+
+  if (input.moveDirection && input.throwDirection && input.moveDirection === input.throwDirection) {
+    return directionToThrowAction(input.throwDirection)
+  }
+
+  if (input.throwDirection && (!input.moveDirection || input.throwDirection === facing)) {
+    return 9
+  }
+
+  return input.moveDirection ? directionToMoveAction(input.moveDirection) : 0
 }
 
 export function buildObservation(level: LevelData, state: StageState, rawScore: number): HeadlessObservation {
@@ -356,5 +386,51 @@ function toPlayableOrClamp(point: { x: number; y: number }): { x: number; y: num
 function validateAction(action: number): void {
   if (!Number.isInteger(action) || action < 0 || action >= HEADLESS_ACTION_COUNT) {
     throw new Error(`Action must be an integer between 0 and ${HEADLESS_ACTION_COUNT - 1}.`)
+  }
+}
+
+function directionToMoveAction(direction: Direction): number {
+  switch (direction) {
+    case 'up':
+      return 1
+    case 'down':
+      return 2
+    case 'left':
+      return 3
+    case 'right':
+      return 4
+  }
+}
+
+function directionToThrowAction(direction: Direction): number {
+  switch (direction) {
+    case 'up':
+      return 5
+    case 'down':
+      return 6
+    case 'left':
+      return 7
+    case 'right':
+      return 8
+  }
+}
+
+function createTeacherPolicy(random: () => number, stochastic: boolean): RuleBasedPlayerPolicy {
+  return new RuleBasedPlayerPolicy({
+    random,
+    topCandidateScoreBand: stochastic ? undefined : 0,
+    weights: stochastic ? undefined : { randomNoise: 0 }
+  })
+}
+
+function createSeededRandom(seed: number): () => number {
+  let state = seed >>> 0
+
+  return () => {
+    state += 0x6D2B79F5
+    let t = state
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }

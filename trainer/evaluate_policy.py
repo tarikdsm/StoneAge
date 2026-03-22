@@ -15,8 +15,10 @@ from eval_utils import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate StoneAge RL policies against the TypeScript simulator.")
-    parser.add_argument("--agents", default="random", help="Comma-separated list: random,ppo")
-    parser.add_argument("--model-path", default="")
+    parser.add_argument("--agents", default="random", help="Comma-separated list: random,heuristic,bc,ppo")
+    parser.add_argument("--model-path", default="", help="Backward-compatible alias for PPO model path.")
+    parser.add_argument("--ppo-model-path", default="")
+    parser.add_argument("--bc-model-path", default="")
     parser.add_argument("--map-id", default="map01")
     parser.add_argument("--map-ids", default="")
     parser.add_argument("--curriculum", choices=("single", "rotation"), default="single")
@@ -34,7 +36,7 @@ def resolve_agents(raw_agents: str) -> list[str]:
     if not agents:
         raise ValueError("At least one agent must be specified.")
 
-    supported_agents = {"random", "ppo"}
+    supported_agents = {"random", "heuristic", "bc", "ppo"}
     unsupported_agents = [agent for agent in agents if agent not in supported_agents]
     if unsupported_agents:
         raise ValueError(f"Unsupported agents: {', '.join(unsupported_agents)}")
@@ -64,7 +66,7 @@ def main() -> None:
             decision_repeat=args.decision_repeat,
             max_decision_steps=args.max_decision_steps,
             seed=args.seed,
-            model_path=args.model_path,
+            model_path=args.bc_model_path if agent == "bc" else (args.ppo_model_path or args.model_path),
             device=args.device,
             deterministic=args.deterministic,
         )

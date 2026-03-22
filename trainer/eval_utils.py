@@ -12,6 +12,7 @@ import matplotlib
 import numpy as np
 from stable_baselines3 import PPO
 
+from bc_model import BehaviorCloningPolicy
 from stoneage_env import StoneAgeEnv
 
 
@@ -48,6 +49,15 @@ def create_env(
 
 
 def load_model(agent: str, model_path: str, device: str, model: Optional[PPO]) -> Optional[PPO]:
+    if agent == "bc":
+        if model is not None:
+            return model
+
+        if not model_path.strip():
+            raise ValueError("Behavior cloning evaluation requires a model instance or --bc-model-path.")
+
+        return BehaviorCloningPolicy.load(model_path, device=device)
+
     if agent != "ppo":
         return None
 
@@ -64,11 +74,19 @@ def select_action(
     agent: str,
     observation: np.ndarray,
     env: StoneAgeEnv,
-    model: Optional[PPO],
+    model: Optional[Any],
     deterministic: bool,
 ) -> int:
     if agent == "random":
         return int(env.action_space.sample())
+
+    if agent == "heuristic":
+        return int(env.get_heuristic_action(deterministic=deterministic))
+
+    if agent == "bc":
+        if model is None:
+            raise ValueError("BC agent requested without a loaded model.")
+        return int(model.predict(observation))
 
     if agent == "ppo":
         if model is None:
@@ -136,21 +154,27 @@ def evaluate_agent(
     model_path: str = "",
     device: str = "cpu",
     deterministic: bool = True,
-    model: Optional[PPO] = None,
+    model: Optional[Any] = None,
 ) -> Dict[str, Any]:
     env = create_env(map_ids, curriculum, decision_repeat, max_decision_steps, seed)
     loaded_model = load_model(agent, model_path, device, model)
     per_map_episodes: DefaultDict[str, list[Dict[str, Any]]] = defaultdict(list)
     all_episodes: list[Dict[str, Any]] = []
+    action_counts = [0 for _ in range(10)]
+    per_map_action_counts: DefaultDict[str, list[int]] = defaultdict(lambda: [0 for _ in range(10)])
 
     try:
         for episode_index in range(episodes):
             observation, reset_info = env.reset(seed=seed + episode_index)
             episode_map_id = str(reset_info["map_id"])
             total_reward = 0.0
+            episode_actions = [0 for _ in range(10)]
 
             while True:
                 action = select_action(agent, observation, env, loaded_model, deterministic)
+                action_counts[action] += 1
+                per_map_action_counts[episode_map_id][action] += 1
+                episode_actions[action] += 1
                 observation, reward, terminated, truncated, info = env.step(action)
                 total_reward += reward
 
@@ -166,6 +190,7 @@ def evaluate_agent(
                         "decision_steps": int(info["decision_steps"]),
                         "sim_steps": int(info["sim_steps"]),
                         "truncated": bool(truncated),
+                        "action_counts": episode_actions,
                     }
                     all_episodes.append(episode_result)
                     per_map_episodes[episode_map_id].append(episode_result)
@@ -175,6 +200,11 @@ def evaluate_agent(
 
     per_map = {map_id: summarize_episode_results(results) for map_id, results in per_map_episodes.items()}
     summary = summarize_episode_results(all_episodes)
+    action_distribution = summarize_action_distribution(action_counts)
+    per_map_action_distribution = {
+        map_id: summarize_action_distribution(counts)
+        for map_id, counts in per_map_action_counts.items()
+    }
 
     return {
         "agent": agent,
@@ -183,12 +213,15 @@ def evaluate_agent(
         "map_ids": list(map_ids),
         "summary": summary,
         "per_map": per_map,
+        "action_distribution": action_distribution,
+        "per_map_action_distribution": per_map_action_distribution,
         "episodes": all_episodes,
     }
 
 
 def print_report(report: Dict[str, Any], prefix: str = "eval") -> None:
     summary = report["summary"]
+    action_distribution = report["action_distribution"]
     print(
         "[%s:%s] completion_rate=%.3f death_rate=%.3f avg_kills=%.2f avg_reward=%.2f avg_raw_score=%.2f avg_decision_steps=%.2f avg_sim_steps=%.2f"
         % (
@@ -201,6 +234,17 @@ def print_report(report: Dict[str, Any], prefix: str = "eval") -> None:
             summary["average_raw_score"],
             summary["average_decision_steps"],
             summary["average_sim_steps"],
+        )
+    )
+    print(
+        "[%s:%s:actions] noop_ratio=%.3f space_ratio=%.3f entropy=%.3f counts=%s"
+        % (
+            prefix,
+            report["agent"],
+            action_distribution["no_op_ratio"],
+            action_distribution["space_action_ratio"],
+            action_distribution["empirical_entropy_bits"],
+            action_distribution["counts"],
         )
     )
 
@@ -275,3 +319,26 @@ def to_serializable_float(value: float) -> float:
     if math.isfinite(value):
         return float(value)
     return 0.0
+
+
+def summarize_action_distribution(action_counts: Sequence[int]) -> Dict[str, Any]:
+    total = int(sum(action_counts))
+    if total <= 0:
+        return {
+            "counts": [int(value) for value in action_counts],
+            "frequencies": [0.0 for _ in action_counts],
+            "no_op_ratio": 0.0,
+            "space_action_ratio": 0.0,
+            "empirical_entropy_bits": 0.0,
+        }
+
+    frequencies = [float(count) / total for count in action_counts]
+    entropy_bits = -sum(prob * math.log2(prob) for prob in frequencies if prob > 0)
+
+    return {
+        "counts": [int(value) for value in action_counts],
+        "frequencies": frequencies,
+        "no_op_ratio": frequencies[0],
+        "space_action_ratio": float(sum(frequencies[5:10])),
+        "empirical_entropy_bits": entropy_bits,
+    }

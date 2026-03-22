@@ -73,6 +73,17 @@ class StoneAgeTSBridge:
                 self.process.kill()
                 self.process.wait(timeout=5)
 
+    def get_heuristic_action(self, deterministic: bool = True) -> int:
+        response = self.request(
+            {
+                "type": "heuristic_action",
+                "deterministic": deterministic,
+            }
+        )
+        if "action" not in response:
+            raise StoneAgeBridgeError("Simulator bridge returned no heuristic action.")
+        return int(response["action"])
+
     def _spawn_process(self) -> subprocess.Popen[str]:
         tsx_path = self._resolve_tsx_path()
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0

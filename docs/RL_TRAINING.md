@@ -41,11 +41,20 @@ This avoids reimplementing gameplay rules in Python.
   PPO smoke test and training entrypoint for one map or a simple rotation,
   including periodic evaluation, checkpoint metrics, and curve plots
 - `trainer/evaluate_policy.py`
-  Formal multi-episode evaluation for random and PPO agents, including JSON
-  reports under `trainer/eval_reports/`
+  Formal multi-episode evaluation for `random`, `heuristic`, `bc`, and `ppo`
+  agents, including JSON reports under `trainer/eval_reports/`
 - `trainer/eval_utils.py`
   Shared evaluation/reporting helpers used by both training and standalone
   evaluation
+- `trainer/affordance_features.py`
+  Derived tactical features extracted from the structured headless observation
+  without changing gameplay rules
+- `trainer/collect_heuristic_dataset.py`
+  Dataset collector for the heuristic teacher on `map01`
+- `trainer/train_behavior_cloning.py`
+  First supervised imitation baseline for `map01`
+- `trainer/bc_model.py`
+  Simple PyTorch classifier used by the behavior-cloning baseline
 
 ## Protocol
 
@@ -56,6 +65,7 @@ Supported request types:
 - `create_env`
 - `reset`
 - `step`
+- `heuristic_action`
 - `close`
 
 Example reset request:
@@ -124,7 +134,7 @@ The TypeScript simulator still returns the same structured numeric payload:
 - raw score
 
 The Gymnasium environment now converts that payload into a richer fixed
-`numpy` vector of length `915`, still compatible with `MlpPolicy`.
+`numpy` vector of length `955`, still compatible with `MlpPolicy`.
 
 Current layout:
 
@@ -148,6 +158,15 @@ Current layout:
   - block respawn timer
   - elapsed stage time
   - raw score (scaled auxiliary feature)
+- derived affordance / threat features:
+  - free movement by direction
+  - adjacent pushable blocks by direction
+  - useful launch opportunities by direction
+  - immediate enemy-lane threats
+  - immediate escape-route availability
+  - trapped-state flag
+  - counts of productive / safe / legal actions
+  - minimum enemy distance
 
 This keeps the policy on `MlpPolicy` while giving it a much clearer spatial
 signal than the original compact scalar grid encoding.
@@ -198,6 +217,34 @@ Per-step `info` now also exposes:
 - `reward_repeated_useless_action_penalty`
 - `repeated_useless_action`
 
+## Behavior cloning baseline
+
+To increase the amount of useful learning signal on `map01`, the trainer now
+supports a first imitation-learning baseline:
+
+- collect heuristic-teacher rollouts with `collect_heuristic_dataset.py`
+- train a simple classifier with `train_behavior_cloning.py`
+- evaluate it with the same `evaluate_policy.py` pipeline used for PPO
+
+This gives the project three directly comparable baselines on `map01`:
+
+- `random`
+- `bc`
+- `ppo`
+
+The bridge exposes `heuristic_action` so Python can query the same
+TypeScript-side teacher policy used by the browser simulator.
+
+Evaluation reports now also include:
+
+- action counts and frequencies
+- no-op ratio
+- space-action ratio
+- empirical action entropy
+
+These metrics are used to detect policy collapse, degenerate action loops, and
+loss of launch usage.
+
 ## Determinism
 
 `createStageState(level, { seed })` now accepts a seed override.
@@ -220,12 +267,16 @@ The headless simulator is deterministic relative to:
   slot-file parser and structural validation contract
 - the observation is richer than before, but it is still a flattened vector
   rather than a CNN-style tensor or a `Dict` policy input
+- the behavior-cloning baseline improves on `random` in map-clear terms, but it
+  is still far below the direct heuristic teacher because of rollout
+  distribution shift
 - PPO currently defaults to `device=cpu` in `train_ppo.py` because this first
   baseline uses `MlpPolicy`, which Stable-Baselines3 generally handles better
   on CPU
-- the current experiments still do not show successful clears on `map01`, so
-  the new reporting infrastructure is currently being used to diagnose learning
-  failure rather than confirm mastery
+- the current PPO experiments on `map01` still do not show successful clears,
+  and action-distribution reports show policy collapse toward single-direction
+  movement, so the new reporting infrastructure is currently being used to
+  diagnose learning failure rather than confirm mastery
 
 ## Training presets
 
@@ -275,5 +326,17 @@ trainer/.venv/Scripts/python.exe trainer/train_ppo.py --map-id map01 --curriculu
 Formal evaluation:
 
 ```bash
-trainer/.venv/Scripts/python.exe trainer/evaluate_policy.py --agents random,ppo --map-id map01 --curriculum single --episodes 20 --model-path trainer/models/ppo_stoneage_map01_50k_best.zip
+trainer/.venv/Scripts/python.exe trainer/evaluate_policy.py --agents random,bc,ppo --map-id map01 --curriculum single --episodes 20 --bc-model-path trainer/models/bc_map01_heuristic.pt --ppo-model-path trainer/models/ppo_stoneage_map01_affordance_debug_step0004000.zip
+```
+
+Collect heuristic-teacher dataset:
+
+```bash
+trainer/.venv/Scripts/python.exe trainer/collect_heuristic_dataset.py --map-id map01 --episodes 400 --output-name heuristic_map01_bc
+```
+
+Train behavior cloning:
+
+```bash
+trainer/.venv/Scripts/python.exe trainer/train_behavior_cloning.py --dataset-path trainer/datasets/heuristic_map01_bc.npz --output-name bc_map01_heuristic --device cpu --epochs 20
 ```

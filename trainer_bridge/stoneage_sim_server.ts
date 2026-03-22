@@ -17,10 +17,12 @@ type BridgeRequest =
   | { type: 'init' | 'create_env'; mapId?: string; seed?: number; maxDecisionSteps?: number }
   | { type: 'reset'; mapId?: string; seed?: number; maxDecisionSteps?: number }
   | { type: 'step'; action: number; decisionRepeat?: number }
+  | { type: 'heuristic_action'; deterministic?: boolean }
   | { type: 'close' }
 
 interface BridgeResponse {
   ok: boolean
+  action?: number
   observation?: HeadlessStepResult['observation']
   raw_score?: number
   terminated?: boolean
@@ -124,6 +126,17 @@ async function handleRequest(request: BridgeRequest): Promise<InternalBridgeResp
       }
 
       return toBridgeResponse(simulator.step(request.action, request.decisionRepeat))
+    }
+
+    case 'heuristic_action': {
+      if (!simulator) {
+        throw new Error('Simulator is not initialized. Send init/create_env first.')
+      }
+
+      return {
+        ok: true,
+        action: simulator.getHeuristicAction(request.deterministic ?? true)
+      }
     }
 
     case 'close':

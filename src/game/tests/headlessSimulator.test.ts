@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   StoneAgeHeadlessSimulator,
+  mapSimulationInputToAction,
   mapActionToSimulationInput
 } from '../simulation/headless/StoneAgeHeadlessSimulator'
 import type { LevelData } from '../types/level'
@@ -69,5 +70,23 @@ describe('StoneAgeHeadlessSimulator', () => {
     expect(mapActionToSimulationInput(9, 'left')).toEqual({
       throwDirection: 'left'
     })
+  })
+
+  it('can expose a deterministic heuristic teacher action in the discrete RL space', () => {
+    const simulator = new StoneAgeHeadlessSimulator({
+      mapId: 'map01',
+      level: createHeadlessTestLevel(),
+      seed: 123
+    })
+
+    const action = simulator.getHeuristicAction(true)
+    expect(action).toBeGreaterThanOrEqual(0)
+    expect(action).toBeLessThan(10)
+  })
+
+  it('maps move and launch simulation intents back into the discrete action space', () => {
+    expect(mapSimulationInputToAction({ moveDirection: 'up' }, 'left')).toBe(1)
+    expect(mapSimulationInputToAction({ moveDirection: 'right', throwDirection: 'right' }, 'left')).toBe(8)
+    expect(mapSimulationInputToAction({ throwDirection: 'left' }, 'left')).toBe(9)
   })
 })

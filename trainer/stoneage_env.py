@@ -6,6 +6,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+from affordance_features import build_affordance_features
 from ts_bridge import StoneAgeBridgeError, StoneAgeTSBridge
 
 
@@ -15,21 +16,10 @@ GRID_VECTOR_SIZE = GRID_WIDTH * GRID_HEIGHT
 GRID_CELL_CODE_COUNT = 9
 GRID_CHANNEL_VECTOR_SIZE = GRID_VECTOR_SIZE * GRID_CELL_CODE_COUNT
 AUXILIARY_FEATURE_COUNT = 15
-OBSERVATION_SIZE = GRID_CHANNEL_VECTOR_SIZE + AUXILIARY_FEATURE_COUNT
+AFFORDANCE_FEATURE_COUNT = 40
+OBSERVATION_SIZE = GRID_CHANNEL_VECTOR_SIZE + AUXILIARY_FEATURE_COUNT + AFFORDANCE_FEATURE_COUNT
 NOVELTY_BONUS = 0.05
 MAX_REPEAT_STATE_PENALTY = 1.0
-
-# Mirrors the authoritative headless grid encoding returned by
-# `StoneAgeHeadlessSimulator.buildObservation`.
-GRID_CODE_EMPTY = 0
-GRID_CODE_PLAYER = 1
-GRID_CODE_BLOCK_ORIGINAL = 2
-GRID_CODE_BLOCK_RESPAWNED = 3
-GRID_CODE_ENEMY_ACTIVE = 4
-GRID_CODE_ENEMY_SPAWNING = 5
-GRID_CODE_ENEMY_DIGGING = 6
-GRID_CODE_COLUMN = 7
-GRID_CODE_PLAYER_CAUGHT = 8
 
 
 class StoneAgeEnv(gym.Env[np.ndarray, int]):
@@ -127,6 +117,9 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
     def close(self) -> None:
         self.bridge.close()
 
+    def get_heuristic_action(self, deterministic: bool = True) -> int:
+        return self.bridge.get_heuristic_action(deterministic=deterministic)
+
     def _vectorize_observation(self, observation: Dict[str, Any]) -> np.ndarray:
         grid_codes = np.asarray(observation["grid"], dtype=np.int32)
         grid_channels = np.zeros((GRID_CELL_CODE_COUNT, GRID_VECTOR_SIZE), dtype=np.float32)
@@ -134,8 +127,10 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
             grid_channels[code] = (grid_codes == code).astype(np.float32)
 
         player_position = np.asarray(observation["player_position"], dtype=np.float32) / 9.0
+        player_position_int = (int(observation["player_position"][0]), int(observation["player_position"][1]))
         facing_one_hot = np.zeros(4, dtype=np.float32)
         facing_one_hot[int(observation["player_facing"])] = 1.0
+        affordances = build_affordance_features(grid_codes, player_position_int)
 
         extras = np.asarray(
             [
@@ -152,7 +147,10 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
             dtype=np.float32,
         )
 
-        vector = np.concatenate([grid_channels.reshape(-1), player_position, facing_one_hot, extras], dtype=np.float32)
+        vector = np.concatenate(
+            [grid_channels.reshape(-1), player_position, facing_one_hot, extras, affordances.values],
+            dtype=np.float32,
+        )
         if vector.shape != self.observation_space.shape:
             raise StoneAgeBridgeError(
                 f"Observation vector shape mismatch. Expected {self.observation_space.shape}, got {vector.shape}."
