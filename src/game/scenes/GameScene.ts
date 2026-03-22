@@ -1,18 +1,23 @@
 import Phaser from 'phaser'
 import { formatLevelLabel, getLevel, getNextLevelSlot } from '../data/levelRepository'
-import { createStageState, stepStageState, type SimulationOutcome, type StageState } from '../core/StageState'
+import { createStageState, stepStageState, type SimulationInput, type SimulationOutcome, type StageState } from '../core/StageState'
 import { playPushSfx } from '../audio/playPushSfx'
 import { Block } from '../entities/Block'
 import { Enemy } from '../entities/Enemy'
 import { Player } from '../entities/Player'
+import { RuleBasedPlayerPolicy } from '../systems/ai/RuleBasedPlayerPolicy'
+import { SimulationController } from '../systems/ai/SimulationController'
 import { InputController } from '../systems/input/InputController'
 import type { Direction, LevelData } from '../types/level'
 import { RUNTIME_BOARD_HEIGHT, RUNTIME_BOARD_LABEL, RUNTIME_BOARD_WIDTH, hasCanonicalRuntimeBoardSize } from '../utils/boardGeometry'
 import { addPoints, directionVectors, samePoint } from '../utils/grid'
 import { getBoardViewportLayout } from '../utils/layout'
 
+type ControlMode = 'human' | 'simulation'
+
 interface GameSceneData {
   levelSlot?: number
+  controlMode?: ControlMode
 }
 
 interface UIState {
@@ -42,7 +47,8 @@ export class GameScene extends Phaser.Scene {
   private player!: Player
   private blocks = new Map<string, Block>()
   private enemies = new Map<string, Enemy>()
-  private inputController!: InputController
+  private inputController?: InputController
+  private simulationController?: SimulationController
   private state!: StageState
   private lastDirection: Direction = 'right'
   private statusPulse?: Phaser.GameObjects.Rectangle
@@ -55,12 +61,14 @@ export class GameScene extends Phaser.Scene {
   private loadingText?: Phaser.GameObjects.Text
   private ready = false
   private launchCombos = new Map<string, number>()
+  private controlMode: ControlMode = 'human'
 
   constructor() {
     super('GameScene')
   }
 
   create(data: GameSceneData = {}): void {
+    this.controlMode = data.controlMode ?? 'human'
     this.cameras.main.setBackgroundColor('#08111d')
     this.blocks.clear()
     this.enemies.clear()
@@ -71,7 +79,9 @@ export class GameScene extends Phaser.Scene {
     this.lastDirection = 'right'
     this.ready = false
     this.launchCombos.clear()
-    this.loadingText = this.add.text(this.scale.width / 2, this.scale.height / 2, 'Loading map...', {
+    this.inputController = undefined
+    this.simulationController = undefined
+    this.loadingText = this.add.text(this.scale.width / 2, this.scale.height / 2, this.controlMode === 'simulation' ? 'Loading simulator...' : 'Loading map...', {
       fontFamily: 'Arial',
       fontSize: '22px',
       color: '#e2e8f0',
@@ -100,9 +110,9 @@ export class GameScene extends Phaser.Scene {
     if (this.state.status !== 'playing') {
       this.emitUiState(this.pendingStatusMessage ?? this.state.message)
 
-      if (!this.pendingAdvance && this.time.now >= this.continueLockedUntilMs && this.didPressContinue()) {
+      if (this.controlMode === 'human' && !this.pendingAdvance && this.time.now >= this.continueLockedUntilMs && this.didPressContinue()) {
         if (this.state.status === 'lost') {
-          this.scene.restart({ levelSlot: this.levelSlot })
+          this.scene.restart({ levelSlot: this.levelSlot, controlMode: this.controlMode })
         } else {
           this.returnToMenu()
         }
@@ -110,7 +120,7 @@ export class GameScene extends Phaser.Scene {
       return
     }
 
-    const input = this.inputController.snapshot()
+    const input = this.getStepInput()
     if (input.moveDirection) {
       this.lastDirection = input.moveDirection
     }
@@ -195,6 +205,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private bindInputProviders(): void {
+    if (!this.inputController) {
+      return
+    }
+
     this.inputController.setAnchorProvider(() => this.player)
     this.inputController.setFacingProvider(() => this.lastDirection)
     this.inputController.setPushIntentProvider((direction) => {
@@ -292,11 +306,13 @@ export class GameScene extends Phaser.Scene {
 
   private emitUiState(status: string): void {
     const payload: UIState = {
-      levelName: `${formatLevelLabel(this.levelSlot)} - ${this.level.name}`,
+      levelName: `${this.controlMode === 'simulation' ? 'Simulator' : 'Campaign'} • ${formatLevelLabel(this.levelSlot)} - ${this.level.name}`,
       enemiesRemaining: this.state.enemies.filter((enemy) => enemy.alive).length,
       objective: this.level.objective,
       status,
-      help: 'Desktop: hold arrows/WASD to move or auto-push, Space + direction launches a block, left click steers, right click pushes. Touch: swipe to move or push, tap an adjacent block to push, forceful tap launches.'
+      help: this.controlMode === 'simulation'
+        ? `Simulator: ${this.simulationController?.label ?? 'Rule-based bot'} controls the player, NPCs keep using the core AI, losses auto-retry, and clears auto-advance.`
+        : 'Desktop: hold arrows/WASD to move or auto-push, Space + direction launches a block, left click steers, right click pushes. Touch: swipe to move or push, tap an adjacent block to push, forceful tap launches.'
     }
 
     this.game.events.emit('ui:update', payload)
@@ -327,8 +343,16 @@ export class GameScene extends Phaser.Scene {
 
   private async handleStatusChange(): Promise<void> {
     if (this.state.status === 'lost') {
-      this.pendingStatusMessage = undefined
+      this.pendingAdvance?.remove(false)
+      this.pendingStatusMessage = this.controlMode === 'simulation'
+        ? 'Simulator lost the run. Auto-retrying...'
+        : undefined
       this.continueLockedUntilMs = this.time.now + PLAYER_CAUGHT_ANIMATION_MS
+      if (this.controlMode === 'simulation') {
+        this.pendingAdvance = this.time.delayedCall(PLAYER_CAUGHT_ANIMATION_MS + AUTO_ADVANCE_DELAY_MS, () => {
+          this.scene.restart({ levelSlot: this.levelSlot, controlMode: this.controlMode })
+        })
+      }
       return
     }
 
@@ -339,13 +363,23 @@ export class GameScene extends Phaser.Scene {
 
     const nextSlot = await getNextLevelSlot(this.levelSlot)
     if (!nextSlot) {
-      this.pendingStatusMessage = 'Campaign clear! Tap, click, Enter, or Space to return to the menu.'
+      if (this.controlMode === 'simulation') {
+        this.pendingStatusMessage = 'Simulation campaign clear! Returning to the menu...'
+        this.pendingAdvance = this.time.delayedCall(AUTO_ADVANCE_DELAY_MS * 2, () => {
+          this.returnToMenu()
+        })
+      } else {
+        this.pendingStatusMessage = 'Campaign clear! Tap, click, Enter, or Space to return to the menu.'
+      }
       return
     }
 
-    this.pendingStatusMessage = `${formatLevelLabel(this.levelSlot)} clear. Loading ${formatLevelLabel(nextSlot)}...`
+    this.pendingAdvance?.remove(false)
+    this.pendingStatusMessage = this.controlMode === 'simulation'
+      ? `Simulator cleared ${formatLevelLabel(this.levelSlot)}. Loading ${formatLevelLabel(nextSlot)}...`
+      : `${formatLevelLabel(this.levelSlot)} clear. Loading ${formatLevelLabel(nextSlot)}...`
     this.pendingAdvance = this.time.delayedCall(AUTO_ADVANCE_DELAY_MS, () => {
-      this.scene.restart({ levelSlot: nextSlot })
+      this.scene.restart({ levelSlot: nextSlot, controlMode: this.controlMode })
     })
   }
 
@@ -440,7 +474,11 @@ export class GameScene extends Phaser.Scene {
         throw new Error(`Loaded level must use the canonical ${RUNTIME_BOARD_LABEL} runtime board.`)
       }
       this.state = createStageState(this.level)
-      this.inputController = new InputController(this, this.level.tileSize)
+      if (this.controlMode === 'simulation') {
+        this.simulationController = new SimulationController(new RuleBasedPlayerPolicy())
+      } else {
+        this.inputController = new InputController(this, this.level.tileSize)
+      }
 
       if (!this.scene.isActive('UIScene')) {
         this.scene.launch('UIScene')
@@ -462,5 +500,13 @@ export class GameScene extends Phaser.Scene {
         .setColor('#fda4af')
         .setWordWrapWidth(Math.max(this.scale.width * 0.7, 220))
     }
+  }
+
+  private getStepInput(): SimulationInput {
+    if (this.controlMode === 'simulation') {
+      return this.simulationController?.snapshot(this.level, this.state) ?? {}
+    }
+
+    return this.inputController?.snapshot() ?? {}
   }
 }

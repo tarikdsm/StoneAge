@@ -65,8 +65,10 @@ This preserves readable/testable rules without falling back to hidden turns.
 ## Block replenishment
 
 - original authored blocks remain the main resource for controlling enemies
-- once every original block has been destroyed, the stage starts spawning a new
-  block into a random empty playable cell every 10 seconds
+- once every original block has been destroyed, the stage spawns the first new
+  block immediately so the replenishment rule is readable to the player
+- after that first replacement, the stage keeps spawning a new block into a
+  random empty playable cell every 10 seconds
 - respawned blocks fade in from transparent to fully opaque so the player can
   read the new resource entering the board
 - respawned blocks use the same movement, push, launch, crush, and destruction
@@ -115,6 +117,16 @@ The player wins as soon as all enemies are defeated.
 The shipped campaign currently fills every slot from `01` through `99`, so the
 default order is sequential. Sparse slot numbering is still supported by the
 repository and editor if some slots are intentionally cleared later.
+
+## Simulator mode
+
+- simulator mode reuses the same levels, runtime board, actor rules, and win /
+  loss conditions as normal play
+- the player is driven by a pure rule-based policy instead of browser input
+- defeats auto-retry after the loss animation
+- stage clears auto-advance without waiting for button input
+- the policy layer exists so future trained player and NPC controllers can be
+  introduced without moving gameplay rules out of `StageState`
 
 ## Restart and continue behavior
 

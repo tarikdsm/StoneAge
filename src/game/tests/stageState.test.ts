@@ -177,7 +177,9 @@ describe('StageState real-time simulation', () => {
 
     const outcome = stepStageState(jammedLevel, state, { moveDirection: 'right' }, 16)
     expect(outcome.destroyedBlockIds).toEqual(['block-0'])
-    expect(state.blocks).toHaveLength(0)
+    expect(outcome.spawnedBlockIds).toEqual(['respawn-block-0'])
+    expect(state.blocks).toHaveLength(1)
+    expect(state.blocks[0]?.source).toBe('respawned')
     expect(state.player.gridPosition).toEqual({ x: 3, y: 5 })
   })
 
@@ -195,7 +197,23 @@ describe('StageState real-time simulation', () => {
     expect(state.blockRespawnTimerMs).toBe(BLOCK_RESPAWN_INTERVAL_MS)
   })
 
-  it('spawns a new fading block every ten seconds after the original stock is gone', () => {
+  it('spawns the first replacement block immediately after the original stock is gone', () => {
+    const level = createCanonicalTestLevel({
+      enemies: [{ type: 'basic', x: 10, y: 10 }],
+      walls: [...createRuntimeBorderWalls(), { x: 5, y: 5 }]
+    })
+    const state = createStageState(level)
+    keepEnemiesDormant(state)
+
+    const firstSpawn = stepStageState(level, state, { moveDirection: 'right' }, 16)
+    expect(firstSpawn.destroyedBlockIds).toEqual(['block-0'])
+    expect(firstSpawn.spawnedBlockIds).toEqual(['respawn-block-0'])
+    expect(state.blocks).toHaveLength(1)
+    expect(state.blocks[0]?.source).toBe('respawned')
+    expect(state.blocks[0]?.fadeInMs).toBe(0)
+  })
+
+  it('spawns later replacement blocks every ten seconds after the first immediate block', () => {
     const level = createCanonicalTestLevel({
       blocks: [],
       enemies: [{ type: 'basic', x: 10, y: 10 }]
@@ -203,7 +221,7 @@ describe('StageState real-time simulation', () => {
     const state = createStageState(level)
     keepEnemiesDormant(state)
 
-    const firstSpawn = stepStageState(level, state, {}, BLOCK_RESPAWN_INTERVAL_MS)
+    const firstSpawn = stepStageState(level, state, {}, 16)
     expect(firstSpawn.spawnedBlockIds).toEqual(['respawn-block-0'])
     expect(state.blocks).toHaveLength(1)
     expect(state.blocks[0]?.source).toBe('respawned')
@@ -277,7 +295,8 @@ describe('StageState real-time simulation', () => {
     expect(state.enemies[0]?.phase).toBe('digging')
 
     advance(digLevel, state, 3)
-    expect(state.blocks).toHaveLength(0)
+    expect(state.blocks).toHaveLength(1)
+    expect(state.blocks[0]?.source).toBe('respawned')
   })
 
   it('accelerates the last surviving enemy', () => {

@@ -14,9 +14,10 @@ The project is organized around a few stable rules:
 ## High-level runtime flow
 
 1. `BootScene` loads assets.
-2. `MenuScene` lets the player choose `Play` or `Generate Maps`.
+2. `MenuScene` lets the player choose `Play`, `Simulator`, or `Generate Maps`.
 3. `GameScene` loads a published map slot from the level repository, steps the
-   pure simulation, and syncs visual actors.
+   pure simulation, and syncs visual actors for either human or simulator-driven
+   control.
 4. `UIScene` renders gameplay HUD payloads emitted by `GameScene`.
 5. `MapEditorScene` edits canonical 10x10 playable layouts and publishes them back
    through the same level repository used by the campaign.
@@ -44,7 +45,7 @@ Scenes own runtime orchestration and presentation.
 
 - `MenuScene` is the player-facing hub.
 - `GameScene` coordinates loaded level content, input snapshots, pure
-  simulation stepping, campaign auto-progression, and actor sync.
+  simulation stepping, campaign/simulator auto-progression, and actor sync.
 - `MapEditorScene` coordinates editor UI, upload/download actions, and
   publishing flow.
 - `UIScene` renders HUD overlays for the gameplay scene only, including the
@@ -85,6 +86,18 @@ Input systems convert raw browser/device input into normalized intent.
   and one-shot launch/push attempts
 - both campaign play and scene logic depend on this clean boundary
 
+### `src/game/systems/ai`
+
+Simulator-facing control policies live here.
+
+- `SimulationController.ts` is the runtime wrapper used by `GameScene` when no
+  human input is involved
+- `RuleBasedPlayerPolicy.ts` is the current pure player-bot policy
+- this policy boundary is the intended insertion point for future trained
+  player and NPC controllers
+- the scene stays thin because it only asks the policy layer for normalized
+  `SimulationInput`
+
 ### `src/game/utils`
 
 Reusable pure helpers live here.
@@ -115,6 +128,16 @@ Cross-module contracts live here.
 - `stepStageState(...)` advances the pure simulation state
 - `GameScene` mirrors `worldPosition` into Phaser actors
 - `UIScene` renders HUD state from scene events
+
+### Simulator play
+
+- `GameScene` still loads campaign slots through the level repository
+- instead of sampling browser input, it requests a `SimulationInput` snapshot
+  from `SimulationController`
+- the current controller delegates to `RuleBasedPlayerPolicy`
+- the resulting snapshot still flows into `stepStageState(...)`
+- win/lose handling is scene-owned: simulation mode auto-retries losses and
+  auto-advances clears without changing the pure gameplay rules
 
 ### Map editing
 
@@ -192,6 +215,16 @@ Preferred order:
 3. add or update tests
 4. update scene feedback
 5. update docs
+
+### Replacing the simulator with trained models
+
+Preferred order:
+
+1. keep the authoritative gameplay state and validation rules in `core`
+2. add a new policy implementation under `src/game/systems/ai`
+3. make `SimulationController` choose that policy
+4. keep `GameScene` consuming only normalized `SimulationInput`
+5. add pure tests around the policy behavior and any offline data pipeline
 
 ### Adding a new editor or persistence feature
 

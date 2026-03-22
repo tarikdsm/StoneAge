@@ -26,6 +26,7 @@ export class MenuScene extends Phaser.Scene {
   private controlsTitle?: Phaser.GameObjects.Text
   private controlsText?: Phaser.GameObjects.Text
   private playButton?: MenuButton
+  private simulatorButton?: MenuButton
   private editorButton?: MenuButton
 
   constructor() {
@@ -46,7 +47,7 @@ export class MenuScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(0.5)
 
-    this.subtitleText = this.add.text(0, 0, `Play the campaign from Map 01 or manage published ${PLAYABLE_AREA_LABEL} stage slots in the generator.`, {
+    this.subtitleText = this.add.text(0, 0, `Play the campaign yourself, watch the simulator run it autonomously, or manage published ${PLAYABLE_AREA_LABEL} stage slots in the generator.`, {
       fontFamily: 'Arial',
       color: '#cbd5e1',
       align: 'center'
@@ -61,6 +62,7 @@ export class MenuScene extends Phaser.Scene {
     this.controlsText = this.add.text(0, 0,
       [
         'Play: always starts at Map 01 and advances to the next available map number after each clear.',
+        'Simulator: runs the same campaign with a rule-based player bot, ready for future trained policies.',
         'Generator: edits Map 01, publishes maps 02-99, and can upload/download validated JSON slot files.',
         'Gameplay: Arrow keys / WASD move and auto-push, Space + direction launches, mouse/touch also steer and push.'
       ].join('\n\n'),
@@ -74,6 +76,12 @@ export class MenuScene extends Phaser.Scene {
       'Play',
       'Start from Map 01 and progress through the published map slots.',
       () => this.startGame()
+    )
+
+    this.simulatorButton = this.createMenuButton(
+      'Simulator',
+      'Run the campaign with an autonomous player bot using the pure simulation core.',
+      () => this.startSimulator()
     )
 
     this.editorButton = this.createMenuButton(
@@ -101,7 +109,7 @@ export class MenuScene extends Phaser.Scene {
     const frameWidth = width * 0.9
     const frameHeight = height * 0.82
     const panelWidth = Math.min(width * 0.84, 840)
-    const panelHeight = clamp(height * 0.52, 320, 420)
+    const panelHeight = clamp(height * 0.66, 390, 520)
     const titleSize = clamp(width * 0.036, 28, 46)
     const subtitleSize = clamp(width * 0.017, 16, 22)
     const controlsTitleSize = clamp(width * 0.022, 22, 28)
@@ -137,9 +145,10 @@ export class MenuScene extends Phaser.Scene {
       .setFontSize(controlsSize)
       .setWordWrapWidth(panelWidth - 70)
 
-    const primaryButtonY = height / 2 + panelHeight * 0.16
+    const primaryButtonY = height / 2 + panelHeight * 0.03
     this.setButtonLayout(this.playButton, width / 2 - buttonWidth / 2, primaryButtonY, buttonWidth, buttonHeight, clamp(width * 0.018, 18, 24), clamp(width * 0.0115, 11, 14))
-    this.setButtonLayout(this.editorButton, width / 2 - buttonWidth / 2, primaryButtonY + buttonHeight + 18, buttonWidth, buttonHeight, clamp(width * 0.018, 18, 24), clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.simulatorButton, width / 2 - buttonWidth / 2, primaryButtonY + buttonHeight + 16, buttonWidth, buttonHeight, clamp(width * 0.018, 18, 24), clamp(width * 0.0115, 11, 14))
+    this.setButtonLayout(this.editorButton, width / 2 - buttonWidth / 2, primaryButtonY + (buttonHeight + 16) * 2, buttonWidth, buttonHeight, clamp(width * 0.018, 18, 24), clamp(width * 0.0115, 11, 14))
   }
 
   private createMenuButton(label: string, description: string, onClick: () => void): MenuButton {
@@ -195,7 +204,11 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private startGame(): void {
-    this.scene.start('GameScene', { levelSlot: 1 })
+    this.scene.start('GameScene', { levelSlot: 1, controlMode: 'human' })
+  }
+
+  private startSimulator(): void {
+    this.scene.start('GameScene', { levelSlot: 1, controlMode: 'simulation' })
   }
 
   private openEditor(): void {

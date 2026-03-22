@@ -7,6 +7,7 @@ The project combines:
 
 - a pure real-time gameplay core
 - a browser-driven campaign that always starts at Map 01
+- a simulator mode where a rule-based bot drives the player through the same campaign
 - a built-in map generator/editor for a canonical 10x10 playable area
 - a fixed 12x12 runtime board with a non-playable outer wall ring
 - canonical published map slots stored as JSON under `public/maps/`
@@ -21,10 +22,12 @@ The project combines:
 - Jammed blocks that are destroyed immediately by the push action
 - Space plus a direction launches an adjacent block that can carry enemies
   until they are crushed against solid obstacles, including multi-kill chains
-- When the original block stock is exhausted, fresh blocks respawn into random
-  playable cells every 10 seconds so the stage never becomes unwinnable
+- When the original block stock is exhausted, the first fresh block respawns
+  immediately and the next ones keep appearing in random playable cells every
+  10 seconds so the stage never becomes unwinnable
 - Campaign progression from Map 01 to the next non-empty published slot
-- Menu hub with `Play` and `Generate Maps`
+- Simulator mode that reuses the core runtime with an autonomous player policy
+- Menu hub with `Play`, `Simulator`, and `Generate Maps`
 - Always-available in-game `Menu` button
 - Defeat animation where the player is visibly devoured by the catching NPC
 - Built-in 10x10 playable-area map generator for slots 01-99
@@ -45,6 +48,14 @@ The project combines:
 - Advances automatically to the next non-empty published slot after a clear
 - Returns to the menu when the campaign ends
 - Keeps the HUD `Menu` button available throughout the run
+
+### Simulator
+
+- Starts from **Map 01** using the same published slot catalog as campaign play
+- Drives the player through the pure simulation using a rule-based policy
+- Keeps NPC behavior inside the authoritative `StageState` core
+- Auto-retries on defeat and auto-advances on stage clear
+- Reuses the same board rendering, HUD, progression, and level repository flow
 
 ### Generate Maps
 
@@ -113,10 +124,10 @@ The project combines:
 - **BootScene**
   Loads assets and enters the menu.
 - **MenuScene**
-  Presents the main entry points: `Play` and `Generate Maps`.
+  Presents the main entry points: `Play`, `Simulator`, and `Generate Maps`.
 - **GameScene**
   Loads map slots through the level repository, advances the pure simulation,
-  and syncs render actors.
+  and syncs render actors for either human input or simulator control.
 - **MapEditorScene**
   Edits canonical 10x10 playable layouts and publishes them as 12x12 runtime
   map-slot JSON files.
@@ -132,6 +143,11 @@ The project combines:
   publication.
 - **`src/game/systems/input/InputController.ts`**
   Normalized keyboard, mouse, and touch intent.
+- **`src/game/systems/ai/SimulationController.ts`**
+  Runtime wrapper around swappable player-control policies.
+- **`src/game/systems/ai/RuleBasedPlayerPolicy.ts`**
+  Pure first-pass simulator policy, designed to be replaced later by trained
+  models without rewriting `GameScene`.
 - **`src/game/utils/boardGeometry.ts`**
   Canonical board dimensions, fixed-border helpers, and editor/runtime
   coordinate conversion.
@@ -164,6 +180,7 @@ src/game
   data/
   entities/
   scenes/
+  systems/ai/
   systems/input/
   tests/
   types/

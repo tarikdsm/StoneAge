@@ -870,14 +870,26 @@ function updateBlockFadeIns(state: StageState, deltaMs: number): void {
   }
 }
 
-function advanceRespawnBlocks(level: LevelData, state: StageState, deltaMs: number, outcome: SimulationOutcome): void {
+function advanceRespawnBlocks(
+  level: LevelData,
+  state: StageState,
+  deltaMs: number,
+  outcome: SimulationOutcome
+): void {
   if (state.enemies.every((enemy) => !enemy.alive) || playerCaught(state)) {
     return
   }
 
-  if (state.blocks.some((block) => block.source === 'original')) {
+  const hasOriginalBlocks = state.blocks.some((block) => block.source === 'original')
+  const firstReplacementPending = !hasOriginalBlocks && state.nextRespawnedBlockIndex === 0
+
+  if (hasOriginalBlocks) {
     state.blockRespawnTimerMs = BLOCK_RESPAWN_INTERVAL_MS
     return
+  }
+
+  if (firstReplacementPending) {
+    state.blockRespawnTimerMs = 0
   }
 
   state.blockRespawnTimerMs = Math.max(0, state.blockRespawnTimerMs - deltaMs)
