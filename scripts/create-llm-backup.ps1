@@ -55,6 +55,7 @@ $rootFiles = @(
   "package-lock.json",
   "tsconfig.json",
   "tsconfig.app.json",
+  "tsconfig.bridge.json",
   "vite.config.ts",
   "eslint.config.js",
   "index.html"
@@ -93,6 +94,8 @@ Add-FilesFromPath -RelativePath ".github" -AllowedExtensions @(".yml", ".yaml", 
 Add-FilesFromPath -RelativePath "docs" -AllowedExtensions $allowedTextExtensions
 Add-FilesFromPath -RelativePath "scripts" -AllowedExtensions $allowedTextExtensions
 Add-FilesFromPath -RelativePath "src" -AllowedExtensions $allowedTextExtensions
+Add-FilesFromPath -RelativePath "trainer" -AllowedExtensions @(".py", ".md", ".txt", ".json")
+Add-FilesFromPath -RelativePath "trainer_bridge" -AllowedExtensions @(".ts", ".md", ".txt", ".json")
 Add-FilesFromPath -RelativePath "public\maps" -AllowedExtensions @(".json")
 Add-FilesFromPath -RelativePath "public\assets" -AllowedExtensions @(".svg", ".json", ".md", ".txt")
 Add-FilesFromPath -RelativePath "public\models" -AllowedExtensions @(".json", ".md", ".txt")

@@ -124,8 +124,12 @@ interface RankedEnemyMove {
   score: number
 }
 
+export interface CreateStageStateOptions {
+  seed?: number
+}
+
 /** Creates the initial pure simulation state from authored level JSON. */
-export function createStageState(level: LevelData): StageState {
+export function createStageState(level: LevelData, options: CreateStageStateOptions = {}): StageState {
   const enemies = level.enemies.map((enemy, index) => createEnemyState(`enemy-${index}`, enemy.type, enemy, index))
   const state: StageState = {
     player: createPlayerState(level.playerSpawn),
@@ -134,7 +138,7 @@ export function createStageState(level: LevelData): StageState {
     elapsedMs: 0,
     status: 'playing',
     message: 'Keep moving. Crush every raider.',
-    rngSeed: createInitialSeed(level),
+    rngSeed: createInitialSeed(level, options.seed),
     blockRespawnTimerMs: BLOCK_RESPAWN_INTERVAL_MS,
     nextRespawnedBlockIndex: 0
   }
@@ -326,13 +330,20 @@ function createEnemyState(id: string, type: EnemyDefinition['type'], position: G
   }
 }
 
-function createInitialSeed(level: LevelData): number {
+function createInitialSeed(level: LevelData, overrideSeed?: number): number {
   let seed = 0x9e3779b9
   const seedPoints = [level.playerSpawn, ...level.blocks, ...level.enemies, ...(level.walls ?? [])]
   for (const point of seedPoints) {
     seed = Math.imul(seed ^ (point.x + 31), 1103515245)
     seed = Math.imul(seed ^ (point.y + 131), 12345)
   }
+
+  if (overrideSeed === undefined) {
+    return seed >>> 0
+  }
+
+  const normalizedOverride = Math.floor(overrideSeed) >>> 0
+  seed = Math.imul(seed ^ (normalizedOverride + 0x85ebca6b), 2246822519)
   return seed >>> 0
 }
 

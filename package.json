@@ -9,7 +9,8 @@
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "lint": "eslint .",
     "test": "vitest run",
-    "backup:llm": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\create-llm-backup.ps1"
+    "backup:llm": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\create-llm-backup.ps1",
+    "sim:server": "tsx trainer_bridge/stoneage_sim_server.ts"
   },
   "dependencies": {
     "phaser": "^3.90.0"
@@ -19,6 +20,7 @@
     "@types/node": "^24.0.0",
     "eslint": "^9.21.0",
     "globals": "^15.15.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.24.1",
     "vite": "^7.0.0",

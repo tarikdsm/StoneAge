@@ -119,6 +119,9 @@ The project combines:
 - [`docs/MAP_EDITOR.md`](docs/MAP_EDITOR.md)
   Map generator behavior, slot management, upload/download, and publishing
   workflow.
+- [`docs/RL_TRAINING.md`](docs/RL_TRAINING.md)
+  Headless TypeScript simulator, JSON-lines bridge, Gymnasium environment, and
+  PPO baseline.
 
 ## Architecture summary
 
@@ -202,7 +205,12 @@ src/game
   utils/
 trainer/
   README.md
+  stoneage_env.py
+  train_ppo.py
+  ts_bridge.py
   smoke_test.py
+trainer_bridge/
+  stoneage_sim_server.ts
 ```
 
 ## Local development
@@ -233,6 +241,11 @@ npm run build
   `trainer/.gitignore`
 - `trainer/smoke_test.py` validates that the Python training environment can
   import `torch` and see CUDA
+- `trainer/stoneage_env.py` exposes the real TypeScript gameplay simulation as
+  a Gymnasium environment through a local subprocess bridge
+- `trainer/train_ppo.py` provides the first PPO baseline and smoke-test path
+- `trainer_bridge/stoneage_sim_server.ts` is the Node JSON-lines bridge used by
+  Python
 - WSL2 + Ubuntu remains the preferred long-term trainer host, but the repo also
   supports a Windows fallback workspace when WSL is not enabled yet
 

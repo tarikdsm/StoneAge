@@ -21,6 +21,8 @@ The project is organized around a few stable rules:
 4. `UIScene` renders gameplay HUD payloads emitted by `GameScene`.
 5. `MapEditorScene` edits canonical 10x10 playable layouts and publishes them back
    through the same level repository used by the campaign.
+6. `trainer_bridge/stoneage_sim_server.ts` can run the same core gameplay logic
+   headlessly for Python RL training over a local JSON-lines subprocess bridge.
 
 ## Subsystem boundaries
 
@@ -109,6 +111,17 @@ Simulator-facing control policies live here.
 - the scene stays thin because it only asks the policy layer for normalized
   `SimulationInput`
 
+### `src/game/simulation/headless`
+
+Headless training adapters live here.
+
+- `StoneAgeHeadlessSimulator.ts` wraps the authoritative `StageState` core in a
+  deterministic fixed-substep simulator
+- it maps a discrete RL action space onto the same normalized
+  `SimulationInput` contract used by the game
+- it serializes a compact numeric observation and auxiliary info for Python
+- it remains Phaser-free and render-free
+
 ### `src/game/utils`
 
 Reusable pure helpers live here.
@@ -153,6 +166,19 @@ Cross-module contracts live here.
 - the resulting snapshot still flows into `stepStageState(...)`
 - win/lose handling is scene-owned: simulation mode auto-retries losses and
   auto-advances clears without changing the pure gameplay rules
+
+### RL training
+
+- Python does not reimplement gameplay rules
+- `trainer/stoneage_env.py` launches `trainer_bridge/stoneage_sim_server.ts`
+  as a subprocess
+- the Node bridge loads a published map and creates a
+  `StoneAgeHeadlessSimulator`
+- Python sends JSON-line `reset` / `step` commands
+- TypeScript advances the real gameplay core through fixed substeps and returns
+  structured observations, score, terminal flags, and auxiliary info
+- reward shaping stays on the Python side so training objectives can evolve
+  without changing the canonical gameplay rules
 
 ### Map editing
 
@@ -236,10 +262,12 @@ Preferred order:
 Preferred order:
 
 1. keep the authoritative gameplay state and validation rules in `core`
-2. add a new policy implementation under `src/game/systems/ai`
-3. make `SimulationController` choose that policy
-4. keep `GameScene` consuming only normalized `SimulationInput`
-5. add pure tests around the policy behavior and any offline data pipeline
+2. use `src/game/simulation/headless` plus `trainer_bridge/` when the model
+   needs subprocess-driven offline training
+3. add a new policy implementation under `src/game/systems/ai`
+4. make `SimulationController` choose that policy
+5. keep `GameScene` consuming only normalized `SimulationInput`
+6. add pure tests around the policy behavior and any offline data pipeline
 
 ### Adding a new editor or persistence feature
 
