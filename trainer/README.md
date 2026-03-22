@@ -11,7 +11,9 @@ Current scope:
   subprocess
 - provide a first Gymnasium + PPO baseline without reimplementing rules in
   Python
-- evaluate trained policies across multiple published maps with JSON reports
+- focus the current learning phase on `map01` before expanding map coverage
+- evaluate trained policies with JSON reports, CSV checkpoint metrics, and
+  training-curve plots
 - support a first curriculum step with single-map or rotating-map training
 
 Current files:
@@ -21,13 +23,18 @@ Current files:
 - `ts_bridge.py`
   JSON-lines bridge to the local TypeScript simulator subprocess
 - `stoneage_env.py`
-  Gymnasium environment backed by the real TypeScript simulation
+  Gymnasium environment backed by the real TypeScript simulation, now with a
+  richer flattened observation layout and light diagnostic reward shaping for
+  novelty / loop detection
 - `train_ppo.py`
-  PPO entrypoint with smoke test, checkpoints, TensorBoard logs, and simple
-  map rotation
+  PPO entrypoint focused on `map01` by default, with presets for `50k`, `100k`,
+  and `300k`, periodic checkpoint evaluation, JSON/CSV reports, and curve plots
 - `evaluate_policy.py`
   Multi-episode evaluation for random or PPO agents, with terminal summaries
   and JSON reports under `eval_reports/`
+- `eval_utils.py`
+  Shared evaluation, reporting, and curve-generation helpers used by training
+  and standalone evaluation
 
 Planned next training files:
 

@@ -35,12 +35,17 @@ This avoids reimplementing gameplay rules in Python.
   Subprocess management and JSON-line request/response handling
 - `trainer/stoneage_env.py`
   Gymnasium environment backed by the TypeScript simulator process, with
-  single-map or rotating-map curriculum support
+  single-map or rotating-map curriculum support and a richer flattened
+  observation layout for `MlpPolicy`
 - `trainer/train_ppo.py`
-  PPO smoke test and training entrypoint for one map or a simple rotation
+  PPO smoke test and training entrypoint for one map or a simple rotation,
+  including periodic evaluation, checkpoint metrics, and curve plots
 - `trainer/evaluate_policy.py`
   Formal multi-episode evaluation for random and PPO agents, including JSON
   reports under `trainer/eval_reports/`
+- `trainer/eval_utils.py`
+  Shared evaluation/reporting helpers used by both training and standalone
+  evaluation
 
 ## Protocol
 
@@ -105,7 +110,7 @@ Action `9` currently means "attempt launch in the current facing direction."
 
 ## Observation model
 
-The TypeScript simulator returns a structured numeric observation containing:
+The TypeScript simulator still returns the same structured numeric payload:
 
 - flattened 10x10 playable grid
 - player position
@@ -118,8 +123,34 @@ The TypeScript simulator returns a structured numeric observation containing:
 - elapsed stage time
 - raw score
 
-The Gymnasium environment converts that structure into a fixed `numpy` vector
-of length `114`.
+The Gymnasium environment now converts that payload into a richer fixed
+`numpy` vector of length `915`, still compatible with `MlpPolicy`.
+
+Current layout:
+
+- `9 x 100` one-hot grid channels, flattened channel-first:
+  - empty
+  - player
+  - original block
+  - respawned block
+  - active enemy
+  - spawning enemy
+  - digging enemy
+  - column / wall
+  - player caught
+- auxiliary features:
+  - player position
+  - player facing one-hot
+  - motion active
+  - push cooldown
+  - enemies alive
+  - block counts
+  - block respawn timer
+  - elapsed stage time
+  - raw score (scaled auxiliary feature)
+
+This keeps the policy on `MlpPolicy` while giving it a much clearer spatial
+signal than the original compact scalar grid encoding.
 
 The per-step `info` payload also exposes:
 
@@ -139,14 +170,33 @@ The per-step `info` payload also exposes:
 
 The PPO environment does not train directly on the visible game score.
 
-Current reward:
+Current reward base:
 
 - `+1000` on clear
 - `-1000` on death
 - `+120` per enemy kill
 - `-1` per decision
 - `-0.05` per substep
-- `-5` for repeated useless action loops
+
+Light diagnostic shaping added for the early learning phase:
+
+- small novelty bonus on the first visit to a state signature
+- gentle penalty for excessive repeated visits to the same state signature
+
+Inference:
+this keeps the objective anchored to clear/death/kill/time, but adds enough
+signal to diagnose whether the agent is merely looping or exploring.
+
+The older hard `-5` repeated-useless-action penalty was removed from this RL
+phase so the reward stays closer to the objective definition above.
+
+Per-step `info` now also exposes:
+
+- `state_visit_count`
+- `reward_novelty_bonus`
+- `reward_repeat_state_penalty`
+- `reward_repeated_useless_action_penalty`
+- `repeated_useless_action`
 
 ## Determinism
 
@@ -164,14 +214,37 @@ The headless simulator is deterministic relative to:
 
 - the bridge currently supports only the first training rollout set:
   `map01`, `map02`, and `map03`
+- the active learning phase is intentionally focused on `map01`
 - the Node bridge uses a lightweight published-map validation path instead of
   the browser repository loader itself, but it now reuses the same authoritative
   slot-file parser and structural validation contract
-- the observation is intentionally simple and vector-first; it is not yet a
-  richer multi-channel tensor
+- the observation is richer than before, but it is still a flattened vector
+  rather than a CNN-style tensor or a `Dict` policy input
 - PPO currently defaults to `device=cpu` in `train_ppo.py` because this first
   baseline uses `MlpPolicy`, which Stable-Baselines3 generally handles better
   on CPU
+- the current experiments still do not show successful clears on `map01`, so
+  the new reporting infrastructure is currently being used to diagnose learning
+  failure rather than confirm mastery
+
+## Training presets
+
+`train_ppo.py` now exposes simple long-run presets:
+
+- `debug`
+- `50k`
+- `100k`
+- `300k`
+
+The current default is `map01` + `single` + `50k`.
+
+Each run produces:
+
+- periodic checkpoint `.zip` files in `trainer/models/`
+- checkpoint metrics JSON in `trainer/eval_reports/`
+- checkpoint metrics CSV in `trainer/eval_reports/`
+- a reward/completion curve PNG in `trainer/eval_reports/`
+- a run summary JSON with the random baseline, best checkpoint, and final report
 
 ## Local commands
 
@@ -190,11 +263,17 @@ npm run sim:server
 Short PPO smoke run:
 
 ```bash
-trainer/.venv/Scripts/python.exe trainer/train_ppo.py --map-ids map01,map02,map03 --curriculum rotation --timesteps 2048 --device cpu
+trainer/.venv/Scripts/python.exe trainer/train_ppo.py --map-id map01 --curriculum single --preset debug --device cpu
+```
+
+Longer map01 run:
+
+```bash
+trainer/.venv/Scripts/python.exe trainer/train_ppo.py --map-id map01 --curriculum single --preset 50k --device cpu
 ```
 
 Formal evaluation:
 
 ```bash
-trainer/.venv/Scripts/python.exe trainer/evaluate_policy.py --agents random,ppo --map-ids map01,map02,map03 --curriculum rotation --episodes 9 --model-path trainer/models/ppo_stoneage_rotation_map01_map02_map03.zip
+trainer/.venv/Scripts/python.exe trainer/evaluate_policy.py --agents random,ppo --map-id map01 --curriculum single --episodes 20 --model-path trainer/models/ppo_stoneage_map01_50k_best.zip
 ```

@@ -243,11 +243,14 @@ npm run build
   import `torch` and see CUDA
 - `trainer/stoneage_env.py` exposes the real TypeScript gameplay simulation as
   a Gymnasium environment through a local subprocess bridge, with single-map
-  or rotating-map curriculum support
+  or rotating-map curriculum support and a richer flattened spatial observation
 - `trainer/train_ppo.py` provides the PPO baseline, smoke-test path, and a
-  first curriculum step over `map01`-`map03`
+  first curriculum step over `map01`-`map03`, while defaulting this learning
+  phase to focused `map01` experiments with periodic checkpoint evaluation
 - `trainer/evaluate_policy.py` measures completion rate, death rate, kills,
   reward, raw score, and step counts for random or PPO agents
+- `trainer/eval_utils.py` centralizes RL evaluation, checkpoint metrics, and
+  training-curve reporting
 - `trainer_bridge/stoneage_sim_server.ts` is the Node JSON-lines bridge used by
   Python, currently backed by `map01`, `map02`, and `map03`
 - WSL2 + Ubuntu remains the preferred long-term trainer host, but the repo also

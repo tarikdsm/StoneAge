@@ -9,8 +9,27 @@ from gymnasium import spaces
 from ts_bridge import StoneAgeBridgeError, StoneAgeTSBridge
 
 
-GRID_VECTOR_SIZE = 10 * 10
-OBSERVATION_SIZE = GRID_VECTOR_SIZE + 2 + 4 + 1 + 1 + 4 + 1 + 1
+GRID_WIDTH = 10
+GRID_HEIGHT = 10
+GRID_VECTOR_SIZE = GRID_WIDTH * GRID_HEIGHT
+GRID_CELL_CODE_COUNT = 9
+GRID_CHANNEL_VECTOR_SIZE = GRID_VECTOR_SIZE * GRID_CELL_CODE_COUNT
+AUXILIARY_FEATURE_COUNT = 15
+OBSERVATION_SIZE = GRID_CHANNEL_VECTOR_SIZE + AUXILIARY_FEATURE_COUNT
+NOVELTY_BONUS = 0.05
+MAX_REPEAT_STATE_PENALTY = 1.0
+
+# Mirrors the authoritative headless grid encoding returned by
+# `StoneAgeHeadlessSimulator.buildObservation`.
+GRID_CODE_EMPTY = 0
+GRID_CODE_PLAYER = 1
+GRID_CODE_BLOCK_ORIGINAL = 2
+GRID_CODE_BLOCK_RESPAWNED = 3
+GRID_CODE_ENEMY_ACTIVE = 4
+GRID_CODE_ENEMY_SPAWNING = 5
+GRID_CODE_ENEMY_DIGGING = 6
+GRID_CODE_COLUMN = 7
+GRID_CODE_PLAYER_CAUGHT = 8
 
 
 class StoneAgeEnv(gym.Env[np.ndarray, int]):
@@ -49,6 +68,7 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
         self._last_sim_steps = 0
         self._last_action: Optional[int] = None
         self._last_state_signature = ""
+        self._state_visit_counts: Dict[str, int] = {}
 
     def reset(
         self,
@@ -72,6 +92,7 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
         self._last_sim_steps = info["sim_steps"]
         self._last_action = None
         self._last_state_signature = info["state_signature"]
+        self._state_visit_counts = {self._last_state_signature: 1}
         return self._vectorize_observation(response["observation"]), info
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
@@ -87,7 +108,8 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
         )
         info = self._extract_info(response["info"])
         observation = self._vectorize_observation(response["observation"])
-        reward = self._compute_reward(action, info)
+        reward, reward_details = self._compute_reward(action, info)
+        info.update(reward_details)
 
         self._last_kills = info["kills"]
         self._last_sim_steps = info["sim_steps"]
@@ -106,7 +128,11 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
         self.bridge.close()
 
     def _vectorize_observation(self, observation: Dict[str, Any]) -> np.ndarray:
-        grid = np.asarray(observation["grid"], dtype=np.float32) / 8.0
+        grid_codes = np.asarray(observation["grid"], dtype=np.int32)
+        grid_channels = np.zeros((GRID_CELL_CODE_COUNT, GRID_VECTOR_SIZE), dtype=np.float32)
+        for code in range(GRID_CELL_CODE_COUNT):
+            grid_channels[code] = (grid_codes == code).astype(np.float32)
+
         player_position = np.asarray(observation["player_position"], dtype=np.float32) / 9.0
         facing_one_hot = np.zeros(4, dtype=np.float32)
         facing_one_hot[int(observation["player_facing"])] = 1.0
@@ -121,11 +147,12 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
                 min(float(observation["respawned_blocks_active"]) / 20.0, 1.0),
                 min(float(observation["block_respawn_timer_ms"]) / 10000.0, 1.0),
                 min(float(observation["elapsed_ms"]) / 30000.0, 1.0),
+                np.tanh(float(observation["raw_score"]) / 2000.0),
             ],
             dtype=np.float32,
         )
 
-        vector = np.concatenate([grid, player_position, facing_one_hot, extras], dtype=np.float32)
+        vector = np.concatenate([grid_channels.reshape(-1), player_position, facing_one_hot, extras], dtype=np.float32)
         if vector.shape != self.observation_space.shape:
             raise StoneAgeBridgeError(
                 f"Observation vector shape mismatch. Expected {self.observation_space.shape}, got {vector.shape}."
@@ -149,7 +176,7 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
             "stage_elapsed_ms": int(raw_info["stage_elapsed_ms"]),
         }
 
-    def _compute_reward(self, action: int, info: Dict[str, Any]) -> float:
+    def _compute_reward(self, action: int, info: Dict[str, Any]) -> Tuple[float, Dict[str, float | int]]:
         reward = 0.0
         reward -= 1.0
 
@@ -164,16 +191,30 @@ class StoneAgeEnv(gym.Env[np.ndarray, int]):
         if info["dead"]:
             reward -= 1000.0
 
+        state_visit_count = self._state_visit_counts.get(info["state_signature"], 0)
+        novelty_bonus = NOVELTY_BONUS if state_visit_count == 0 else 0.0
+        repeat_state_penalty = 0.0
+        if state_visit_count >= 2:
+            repeat_state_penalty = min(MAX_REPEAT_STATE_PENALTY, 0.25 * float(state_visit_count - 1))
+
+        reward += novelty_bonus
+        reward -= repeat_state_penalty
+
         repeated_useless_action = (
             self._last_action is not None
             and action == self._last_action
             and not info["action_effective"]
             and info["state_signature"] == self._last_state_signature
         )
-        if repeated_useless_action:
-            reward -= 5.0
+        self._state_visit_counts[info["state_signature"]] = state_visit_count + 1
 
-        return reward
+        return reward, {
+            "state_visit_count": state_visit_count + 1,
+            "reward_novelty_bonus": novelty_bonus,
+            "reward_repeat_state_penalty": repeat_state_penalty,
+            "reward_repeated_useless_action_penalty": 0.0,
+            "repeated_useless_action": 1 if repeated_useless_action else 0,
+        }
 
     def _resolve_map_ids(self, map_id: str, map_ids: Optional[Sequence[str]]) -> list[str]:
         candidates = [str(candidate).strip() for candidate in (map_ids or [map_id]) if str(candidate).strip()]
