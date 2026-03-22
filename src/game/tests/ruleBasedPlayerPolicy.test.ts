@@ -20,11 +20,19 @@ function createPolicyTestLevel(overrides: Partial<LevelData> = {}): LevelData {
   }
 }
 
+function createSeededRandom(seed: number): () => number {
+  let value = seed >>> 0
+  return () => {
+    value = (Math.imul(value, 1664525) + 1013904223) >>> 0
+    return value / 0x100000000
+  }
+}
+
 describe('RuleBasedPlayerPolicy', () => {
   it('launches an adjacent block when it can crush an enemy in lane', () => {
     const level = createPolicyTestLevel()
     const state = createStageState(level)
-    const policy = new RuleBasedPlayerPolicy()
+    const policy = new RuleBasedPlayerPolicy({ random: () => 0 })
 
     const input = policy.decide(level, state)
     expect(input).toEqual({
@@ -33,18 +41,18 @@ describe('RuleBasedPlayerPolicy', () => {
     })
   })
 
-  it('moves toward a reachable block setup when no immediate launch exists', () => {
+  it('can choose a safer staging route when no immediate launch exists', () => {
     const level = createPolicyTestLevel({
       playerSpawn: { x: 2, y: 5 },
       blocks: [{ x: 6, y: 5 }],
       enemies: [{ type: 'basic', x: 8, y: 5 }]
     })
     const state = createStageState(level)
-    const policy = new RuleBasedPlayerPolicy()
+    const policy = new RuleBasedPlayerPolicy({ random: () => 0 })
 
     const input = policy.decide(level, state)
     expect(input).toEqual({
-      moveDirection: 'right'
+      moveDirection: 'up'
     })
   })
 
@@ -54,11 +62,32 @@ describe('RuleBasedPlayerPolicy', () => {
       enemies: [{ type: 'basic', x: 4, y: 5 }]
     })
     const state = createStageState(level)
-    const policy = new RuleBasedPlayerPolicy()
+    const policy = new RuleBasedPlayerPolicy({ random: () => 0 })
 
     const input = policy.decide(level, state)
     expect(input).toEqual({
       moveDirection: 'up'
     })
+  })
+
+  it('uses controlled randomness to vary between near-equal tactical openings', () => {
+    const level = createPolicyTestLevel({
+      playerSpawn: { x: 6, y: 8 },
+      blocks: [{ x: 4, y: 4 }, { x: 8, y: 4 }],
+      enemies: [{ type: 'basic', x: 6, y: 2 }]
+    })
+
+    const openings = [1, 2, 3, 4].map((seed) => {
+      const policy = new RuleBasedPlayerPolicy({
+        random: createSeededRandom(seed),
+        topCandidateScoreBand: 5000,
+        weights: {
+          randomNoise: 0
+        }
+      })
+      return policy.decide(level, createStageState(level)).moveDirection
+    })
+
+    expect(new Set(openings).size).toBeGreaterThan(1)
   })
 })

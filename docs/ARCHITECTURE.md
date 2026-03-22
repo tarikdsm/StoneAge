@@ -92,7 +92,10 @@ Simulator-facing control policies live here.
 
 - `SimulationController.ts` is the runtime wrapper used by `GameScene` when no
   human input is involved
-- `RuleBasedPlayerPolicy.ts` is the current pure player-bot policy
+- `RuleBasedPlayerPolicy.ts` is the current pure player-bot policy, using
+  short-horizon lookahead, tactical scoring, and controlled randomness
+- `ModelPlayerPolicy.ts` loads a future browser-friendly player model artifact
+  from `public/models/player-policy.json`
 - this policy boundary is the intended insertion point for future trained
   player and NPC controllers
 - the scene stays thin because it only asks the policy layer for normalized
@@ -134,7 +137,8 @@ Cross-module contracts live here.
 - `GameScene` still loads campaign slots through the level repository
 - instead of sampling browser input, it requests a `SimulationInput` snapshot
   from `SimulationController`
-- the current controller delegates to `RuleBasedPlayerPolicy`
+- the current controller can swap between `RuleBasedPlayerPolicy` and a loaded
+  `ModelPlayerPolicy` artifact without changing the scene/runtime contract
 - the resulting snapshot still flows into `stepStageState(...)`
 - win/lose handling is scene-owned: simulation mode auto-retries losses and
   auto-advances clears without changing the pure gameplay rules

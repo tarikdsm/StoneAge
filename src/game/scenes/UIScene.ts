@@ -7,6 +7,7 @@ interface UIState {
   objective: string
   status: string
   help: string
+  simulatorPolicyLabel?: string
 }
 
 /**
@@ -20,6 +21,8 @@ export class UIScene extends Phaser.Scene {
   private bottomPanel?: Phaser.GameObjects.Rectangle
   private menuButton?: Phaser.GameObjects.Rectangle
   private menuButtonText?: Phaser.GameObjects.Text
+  private simulatorPolicyButton?: Phaser.GameObjects.Rectangle
+  private simulatorPolicyButtonText?: Phaser.GameObjects.Text
   private titleText?: Phaser.GameObjects.Text
   private objectiveText?: Phaser.GameObjects.Text
   private enemiesText?: Phaser.GameObjects.Text
@@ -48,10 +51,27 @@ export class UIScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(0.5)
 
+    this.simulatorPolicyButton = this.add.rectangle(0, 0, 10, 10, 0x1e3a5f, 1)
+      .setOrigin(0)
+      .setStrokeStyle(2, 0x7dd3fc, 0.36)
+      .setInteractive({ useHandCursor: true })
+      .setVisible(false)
+
+    this.simulatorPolicyButtonText = this.add.text(0, 0, 'Bot: Heuristico', {
+      fontFamily: 'Arial',
+      color: '#e0f2fe',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setVisible(false)
+
     this.menuButton.on('pointerup', (_pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation()
       this.scene.stop('GameScene')
       this.scene.start('MenuScene')
+    })
+
+    this.simulatorPolicyButton.on('pointerup', (_pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation()
+      this.game.events.emit('ui:toggle-simulator-player-policy')
     })
 
     this.titleText = this.add.text(0, 0, '', {
@@ -97,6 +117,12 @@ export class UIScene extends Phaser.Scene {
     this.enemiesText?.setText(`Raiders Remaining: ${payload.enemiesRemaining}`)
     this.statusText?.setText(payload.status)
     this.helpText?.setText(payload.help)
+    const showSimulatorPolicy = Boolean(payload.simulatorPolicyLabel)
+    this.simulatorPolicyButton?.setVisible(showSimulatorPolicy)
+    this.simulatorPolicyButtonText
+      ?.setVisible(showSimulatorPolicy)
+      .setText(payload.simulatorPolicyLabel ?? '')
+    this.layoutScene(this.scale.width, this.scale.height)
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
@@ -123,7 +149,10 @@ export class UIScene extends Phaser.Scene {
     const statusSize = clamp(width * 0.015, 14, 18)
     const helpSize = clamp(width * 0.0115, 11, 14)
     const menuButtonWidth = clamp(width * 0.1, 74, 108)
+    const simulatorButtonWidth = clamp(width * 0.16, 112, 164)
     const menuButtonHeight = clamp(height * 0.05, 30, 38)
+    const showSimulatorPolicy = this.simulatorPolicyButton?.visible ?? false
+    const simulatorButtonX = innerRight - menuButtonWidth - 10 - simulatorButtonWidth
 
     this.menuButton
       ?.setPosition(innerRight - menuButtonWidth, topPanelTop + 12)
@@ -137,7 +166,15 @@ export class UIScene extends Phaser.Scene {
       ?.setPosition(innerLeft, topPanelTop + 12)
       .setOrigin(0, 0)
       .setFontSize(titleSize)
-      .setWordWrapWidth(panelWidth - menuButtonWidth - 52)
+      .setWordWrapWidth(panelWidth - menuButtonWidth - (showSimulatorPolicy ? simulatorButtonWidth + 62 : 52))
+
+    this.simulatorPolicyButton
+      ?.setPosition(simulatorButtonX, topPanelTop + 12)
+      .setSize(simulatorButtonWidth, menuButtonHeight)
+
+    this.simulatorPolicyButtonText
+      ?.setPosition(simulatorButtonX + simulatorButtonWidth / 2, topPanelTop + 12 + menuButtonHeight / 2)
+      .setFontSize(clamp(width * 0.0115, 11, 13))
 
     this.enemiesText
       ?.setPosition(innerRight, topPanelTop + 18 + menuButtonHeight)
@@ -165,7 +202,18 @@ export class UIScene extends Phaser.Scene {
         ?.setPosition(innerLeft, topPanelTop + 10)
         .setOrigin(0, 0)
         .setFontSize(clamp(width * 0.045, 16, 22))
-        .setWordWrapWidth(titleWrapWidth)
+        .setWordWrapWidth(Math.max(titleWrapWidth - (showSimulatorPolicy ? simulatorButtonWidth + 12 : 0), 110))
+
+      this.simulatorPolicyButton
+        ?.setPosition(innerLeft, topPanelTop + hud.topPanelHeight - menuButtonHeight - 12)
+        .setSize(Math.min(panelWidth - menuButtonWidth - 42, simulatorButtonWidth), menuButtonHeight)
+
+      this.simulatorPolicyButtonText
+        ?.setPosition(
+          (this.simulatorPolicyButton?.x ?? innerLeft) + (this.simulatorPolicyButton?.width ?? simulatorButtonWidth) / 2,
+          (this.simulatorPolicyButton?.y ?? topPanelTop) + menuButtonHeight / 2
+        )
+        .setFontSize(clamp(width * 0.028, 10, 12))
 
       this.objectiveText
         ?.setPosition(innerLeft, topPanelTop + 18 + titleSize)
@@ -204,7 +252,15 @@ export class UIScene extends Phaser.Scene {
         ?.setPosition(innerLeft, topPanelTop + 12)
         .setOrigin(0, 0)
         .setFontSize(titleSize)
-        .setWordWrapWidth(panelWidth - menuButtonWidth - 52)
+        .setWordWrapWidth(panelWidth - menuButtonWidth - (showSimulatorPolicy ? simulatorButtonWidth + 62 : 52))
+
+      this.simulatorPolicyButton
+        ?.setPosition(simulatorButtonX, topPanelTop + 12)
+        .setSize(simulatorButtonWidth, menuButtonHeight)
+
+      this.simulatorPolicyButtonText
+        ?.setPosition(simulatorButtonX + simulatorButtonWidth / 2, topPanelTop + 12 + menuButtonHeight / 2)
+        .setFontSize(clamp(width * 0.0115, 11, 13))
 
       this.enemiesText
         ?.setPosition(innerRight, topPanelTop + 18 + menuButtonHeight)

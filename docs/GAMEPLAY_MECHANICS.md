@@ -122,7 +122,14 @@ repository and editor if some slots are intentionally cleared later.
 
 - simulator mode reuses the same levels, runtime board, actor rules, and win /
   loss conditions as normal play
-- the player is driven by a pure rule-based policy instead of browser input
+- the player is driven by a pure heuristic policy instead of browser input by
+  default
+- that heuristic policy uses short-horizon planning plus controlled randomness
+  so repeated runs can explore different survivable lines
+- the HUD can toggle the player bot between `Heuristico` and `IA`
+- `IA` mode loads a future browser-friendly model artifact from
+  `public/models/player-policy.json`, and falls back cleanly if the file does
+  not exist yet
 - defeats auto-retry after the loss animation
 - stage clears auto-advance without waiting for button input
 - the policy layer exists so future trained player and NPC controllers can be

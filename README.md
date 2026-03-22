@@ -7,7 +7,7 @@ The project combines:
 
 - a pure real-time gameplay core
 - a browser-driven campaign that always starts at Map 01
-- a simulator mode where a rule-based bot drives the player through the same campaign
+- a simulator mode with a stronger heuristic bot and optional model-backed player control
 - a built-in map generator/editor for a canonical 10x10 playable area
 - a fixed 12x12 runtime board with a non-playable outer wall ring
 - canonical published map slots stored as JSON under `public/maps/`
@@ -26,7 +26,7 @@ The project combines:
   immediately and the next ones keep appearing in random playable cells every
   10 seconds so the stage never becomes unwinnable
 - Campaign progression from Map 01 to the next non-empty published slot
-- Simulator mode that reuses the core runtime with an autonomous player policy
+- Simulator mode that reuses the core runtime with a heuristic or model-backed autonomous player policy
 - Menu hub with `Play`, `Simulator`, and `Generate Maps`
 - Always-available in-game `Menu` button
 - Defeat animation where the player is visibly devoured by the catching NPC
@@ -52,7 +52,9 @@ The project combines:
 ### Simulator
 
 - Starts from **Map 01** using the same published slot catalog as campaign play
-- Drives the player through the pure simulation using a rule-based policy
+- Drives the player through the pure simulation using a stronger heuristic policy by default
+- Exposes a HUD toggle that switches the player bot between `Heuristico` and `IA`
+- Loads the future `IA` policy from `public/models/player-policy.json` when that model artifact is available
 - Keeps NPC behavior inside the authoritative `StageState` core
 - Auto-retries on defeat and auto-advances on stage clear
 - Reuses the same board rendering, HUD, progression, and level repository flow

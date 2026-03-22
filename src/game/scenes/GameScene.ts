@@ -26,6 +26,7 @@ interface UIState {
   objective: string
   status: string
   help: string
+  simulatorPolicyLabel?: string
 }
 
 const BOARD_FRAME_PADDING = 24
@@ -58,6 +59,8 @@ export class GameScene extends Phaser.Scene {
   private pendingAdvance?: Phaser.Time.TimerEvent
   private playerCaughtAnimationStarted = false
   private continueLockedUntilMs = 0
+  private transientStatusMessage?: string
+  private transientStatusUntilMs = 0
   private loadingText?: Phaser.GameObjects.Text
   private ready = false
   private launchCombos = new Map<string, number>()
@@ -76,6 +79,8 @@ export class GameScene extends Phaser.Scene {
     this.pendingAdvance = undefined
     this.playerCaughtAnimationStarted = false
     this.continueLockedUntilMs = 0
+    this.transientStatusMessage = undefined
+    this.transientStatusUntilMs = 0
     this.lastDirection = 'right'
     this.ready = false
     this.launchCombos.clear()
@@ -93,10 +98,12 @@ export class GameScene extends Phaser.Scene {
     this.spaceKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this)
+    this.game.events.on('ui:toggle-simulator-player-policy', this.handleSimulatorPolicyToggle, this)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this)
       this.pendingAdvance?.remove(false)
       this.inputController?.destroy()
+      this.game.events.off('ui:toggle-simulator-player-policy', this.handleSimulatorPolicyToggle, this)
     })
 
     void this.initializeScene(data)
@@ -108,7 +115,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.state.status !== 'playing') {
-      this.emitUiState(this.pendingStatusMessage ?? this.state.message)
+      this.emitRuntimeUiState(this.resolveStatusMessage())
 
       if (this.controlMode === 'human' && !this.pendingAdvance && this.time.now >= this.continueLockedUntilMs && this.didPressContinue()) {
         if (this.state.status === 'lost') {
@@ -135,7 +142,7 @@ export class GameScene extends Phaser.Scene {
 
     this.syncActors()
     this.animateFrameFeedback(outcome)
-    this.emitUiState(this.pendingStatusMessage ?? this.state.message)
+    this.emitRuntimeUiState(this.resolveStatusMessage())
   }
 
   private createBoard(): void {
@@ -318,6 +325,21 @@ export class GameScene extends Phaser.Scene {
     this.game.events.emit('ui:update', payload)
   }
 
+  private emitRuntimeUiState(status: string): void {
+    this.game.events.emit('ui:update', {
+      levelName: `${this.controlMode === 'simulation' ? 'Simulator' : 'Campaign'} - ${formatLevelLabel(this.levelSlot)} - ${this.level.name}`,
+      enemiesRemaining: this.state.enemies.filter((enemy) => enemy.alive).length,
+      objective: this.level.objective,
+      status,
+      help: this.controlMode === 'simulation'
+        ? `Simulator: ${this.simulationController?.label ?? 'Heuristic bot'} controls the player, the HUD toggle swaps between Heuristico and IA when a trained model is available, NPCs keep using the core AI, losses auto-retry, and clears auto-advance.`
+        : 'Desktop: hold arrows/WASD to move or auto-push, Space + direction launches a block, left click steers, right click pushes. Touch: swipe to move or push, tap an adjacent block to push, forceful tap launches.',
+      simulatorPolicyLabel: this.controlMode === 'simulation'
+        ? this.simulationController?.toggleLabel
+        : undefined
+    } satisfies UIState)
+  }
+
   private handleResize(gameSize: Phaser.Structs.Size): void {
     if (!this.ready) {
       this.loadingText?.setPosition(gameSize.width / 2, gameSize.height / 2)
@@ -489,7 +511,7 @@ export class GameScene extends Phaser.Scene {
       this.bindInputProviders()
       this.applyResponsiveLayout(this.scale.width, this.scale.height)
       this.syncActors()
-      this.emitUiState(this.state.message)
+      this.emitRuntimeUiState(this.state.message)
       this.ready = true
       this.loadingText?.destroy()
       this.loadingText = undefined
@@ -500,6 +522,30 @@ export class GameScene extends Phaser.Scene {
         .setColor('#fda4af')
         .setWordWrapWidth(Math.max(this.scale.width * 0.7, 220))
     }
+  }
+
+  private async handleSimulatorPolicyToggle(): Promise<void> {
+    if (!this.ready || this.controlMode !== 'simulation' || !this.simulationController) {
+      return
+    }
+
+    const result = await this.simulationController.toggleMode()
+    this.setTransientStatus(result.message)
+    this.emitRuntimeUiState(this.resolveStatusMessage())
+  }
+
+  private setTransientStatus(message: string, durationMs = 1800): void {
+    this.transientStatusMessage = message
+    this.transientStatusUntilMs = this.time.now + durationMs
+  }
+
+  private resolveStatusMessage(): string {
+    if (this.transientStatusMessage && this.time.now <= this.transientStatusUntilMs) {
+      return this.transientStatusMessage
+    }
+
+    this.transientStatusMessage = undefined
+    return this.pendingStatusMessage ?? this.state.message
   }
 
   private getStepInput(): SimulationInput {
