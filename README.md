@@ -25,6 +25,12 @@ The project combines:
 - When the original block stock is exhausted, the first fresh block respawns
   immediately and the next ones keep appearing in random playable cells every
   10 seconds so the stage never becomes unwinnable
+- Campaign-wide score and rank tracking:
+  kills add points with a stage-time bonus, stage clears add a much larger
+  bonus, deaths apply a heavy penalty, and the run HUD keeps score, deaths,
+  cleared maps, total run time, and current stage time visible
+- Score changes animate directly on the gameplay HUD for both `Play` and
+  `Simulator`
 - Campaign progression from Map 01 to the next non-empty published slot
 - Simulator mode that reuses the core runtime with a heuristic or model-backed autonomous player policy
 - Menu hub with `Play`, `Simulator`, and `Generate Maps`
@@ -46,6 +52,8 @@ The project combines:
 - Loads the published slot file for the requested map number
 - Converts non-empty map slots into runtime `LevelData`
 - Advances automatically to the next non-empty published slot after a clear
+- Keeps campaign-wide score, deaths, cleared-map count, and time tracking
+  across retries and stage transitions
 - Returns to the menu when the campaign ends
 - Keeps the HUD `Menu` button available throughout the run
 
@@ -58,6 +66,7 @@ The project combines:
 - Keeps NPC behavior inside the authoritative `StageState` core
 - Auto-retries on defeat and auto-advances on stage clear
 - Reuses the same board rendering, HUD, progression, and level repository flow
+- Shares the same score, ranking, and HUD animation system as human play
 
 ### Generate Maps
 
@@ -140,6 +149,9 @@ The project combines:
 
 - **`src/game/core/StageState.ts`**
   Authoritative pure gameplay simulation.
+- **`src/game/core/RunProgress.ts`**
+  Pure campaign-wide scoring, timing, and ranking helpers shared by `Play` and
+  `Simulator`.
 - **`src/game/data/levelRepository.ts`**
   Slot-file loading, validation, conversion, campaign ordering, and GitHub
   publication.

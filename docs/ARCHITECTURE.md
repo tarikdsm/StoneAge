@@ -29,11 +29,14 @@ The project is organized around a few stable rules:
 Pure gameplay logic lives here.
 
 - `StageState.ts` is the authoritative real-time simulation model.
+- `RunProgress.ts` is the pure campaign-wide scoring and ranking module.
 - It owns movement, pushing, launch carry/crush logic, enemy lifecycle,
   win/lose state, and jammed-block destruction.
 - It also owns multi-tile launched-block behavior triggered by the input layer.
 - Enemy routing intelligence also lives here, including blocker-aware chase
   selection, digging, controlled randomness, and last-enemy acceleration.
+- `RunProgress.ts` owns score deltas, death penalties, stage-clear rewards,
+  total run time accumulation, and comparison rules for run ranking.
 - It has no Phaser dependency.
 - It is advanced only through `stepStageState(level, state, input, deltaMs)`.
 
@@ -45,11 +48,12 @@ Scenes own runtime orchestration and presentation.
 
 - `MenuScene` is the player-facing hub.
 - `GameScene` coordinates loaded level content, input snapshots, pure
-  simulation stepping, campaign/simulator auto-progression, and actor sync.
+  simulation stepping, campaign/simulator auto-progression, actor sync, and
+  integration of pure run-progress scoring into the HUD/event layer.
 - `MapEditorScene` coordinates editor UI, upload/download actions, and
   publishing flow.
 - `UIScene` renders HUD overlays for the gameplay scene only, including the
-  always-available return-to-menu control.
+  always-available return-to-menu control plus animated score-change feedback.
 
 Scenes should not duplicate rule logic already owned by `core` or the level
 repository.
@@ -129,8 +133,11 @@ Cross-module contracts live here.
 - `GameScene` creates a `StageState` from that `LevelData`
 - `InputController` creates a normalized input snapshot every frame
 - `stepStageState(...)` advances the pure simulation state
+- `RunProgress.ts` converts kills / deaths / stage clears into campaign score
+  and ranking metrics
 - `GameScene` mirrors `worldPosition` into Phaser actors
-- `UIScene` renders HUD state from scene events
+- `UIScene` renders HUD state from scene events, including score and animated
+  score deltas
 
 ### Simulator play
 

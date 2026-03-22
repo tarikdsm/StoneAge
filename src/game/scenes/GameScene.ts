@@ -1,4 +1,11 @@
 import Phaser from 'phaser'
+import {
+  applyRunProgressUpdate,
+  cloneRunProgressState,
+  createRunProgressState,
+  formatRunStats,
+  type RunProgressState
+} from '../core/RunProgress'
 import { formatLevelLabel, getLevel, getNextLevelSlot } from '../data/levelRepository'
 import { createStageState, stepStageState, type SimulationInput, type SimulationOutcome, type StageState } from '../core/StageState'
 import { playPushSfx } from '../audio/playPushSfx'
@@ -18,6 +25,7 @@ type ControlMode = 'human' | 'simulation'
 interface GameSceneData {
   levelSlot?: number
   controlMode?: ControlMode
+  runProgress?: RunProgressState
 }
 
 interface UIState {
@@ -26,6 +34,8 @@ interface UIState {
   objective: string
   status: string
   help: string
+  score: number
+  runStats: string
   simulatorPolicyLabel?: string
 }
 
@@ -64,6 +74,7 @@ export class GameScene extends Phaser.Scene {
   private loadingText?: Phaser.GameObjects.Text
   private ready = false
   private launchCombos = new Map<string, number>()
+  private runProgress = createRunProgressState()
   private controlMode: ControlMode = 'human'
 
   constructor() {
@@ -84,6 +95,7 @@ export class GameScene extends Phaser.Scene {
     this.lastDirection = 'right'
     this.ready = false
     this.launchCombos.clear()
+    this.runProgress = createRunProgressState(data.runProgress)
     this.inputController = undefined
     this.simulationController = undefined
     this.loadingText = this.add.text(this.scale.width / 2, this.scale.height / 2, this.controlMode === 'simulation' ? 'Loading simulator...' : 'Loading map...', {
@@ -119,7 +131,11 @@ export class GameScene extends Phaser.Scene {
 
       if (this.controlMode === 'human' && !this.pendingAdvance && this.time.now >= this.continueLockedUntilMs && this.didPressContinue()) {
         if (this.state.status === 'lost') {
-          this.scene.restart({ levelSlot: this.levelSlot, controlMode: this.controlMode })
+          this.scene.restart({
+            levelSlot: this.levelSlot,
+            controlMode: this.controlMode,
+            runProgress: cloneRunProgressState(this.runProgress)
+          })
         } else {
           this.returnToMenu()
         }
@@ -136,6 +152,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const outcome = stepStageState(this.level, this.state, input, delta)
+    this.applyRunProgress(outcome)
     if (outcome.statusChanged) {
       void this.handleStatusChange()
     }
@@ -311,6 +328,20 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private applyRunProgress(outcome: SimulationOutcome): void {
+    const result = applyRunProgressUpdate(this.runProgress, {
+      stageElapsedMs: this.state.elapsedMs,
+      crushedEnemyCount: outcome.crushedEnemyIds.length,
+      stageStatus: this.state.status,
+      statusChanged: outcome.statusChanged
+    })
+
+    this.runProgress = result.progress
+    for (const scoreDelta of result.scoreDeltas) {
+      this.game.events.emit('ui:score-delta', scoreDelta)
+    }
+  }
+
   private emitUiState(status: string): void {
     const payload: UIState = {
       levelName: `${this.controlMode === 'simulation' ? 'Simulator' : 'Campaign'} • ${formatLevelLabel(this.levelSlot)} - ${this.level.name}`,
@@ -319,7 +350,9 @@ export class GameScene extends Phaser.Scene {
       status,
       help: this.controlMode === 'simulation'
         ? `Simulator: ${this.simulationController?.label ?? 'Rule-based bot'} controls the player, NPCs keep using the core AI, losses auto-retry, and clears auto-advance.`
-        : 'Desktop: hold arrows/WASD to move or auto-push, Space + direction launches a block, left click steers, right click pushes. Touch: swipe to move or push, tap an adjacent block to push, forceful tap launches.'
+        : 'Desktop: hold arrows/WASD to move or auto-push, Space + direction launches a block, left click steers, right click pushes. Touch: swipe to move or push, tap an adjacent block to push, forceful tap launches.',
+      score: this.runProgress.score,
+      runStats: formatRunStats(this.runProgress, this.state.elapsedMs)
     }
 
     this.game.events.emit('ui:update', payload)
@@ -334,6 +367,8 @@ export class GameScene extends Phaser.Scene {
       help: this.controlMode === 'simulation'
         ? `Simulator: ${this.simulationController?.label ?? 'Heuristic bot'} controls the player, the HUD toggle swaps between Heuristico and IA when a trained model is available, NPCs keep using the core AI, losses auto-retry, and clears auto-advance.`
         : 'Desktop: hold arrows/WASD to move or auto-push, Space + direction launches a block, left click steers, right click pushes. Touch: swipe to move or push, tap an adjacent block to push, forceful tap launches.',
+      score: this.runProgress.score,
+      runStats: formatRunStats(this.runProgress, this.state.elapsedMs),
       simulatorPolicyLabel: this.controlMode === 'simulation'
         ? this.simulationController?.toggleLabel
         : undefined
@@ -372,7 +407,11 @@ export class GameScene extends Phaser.Scene {
       this.continueLockedUntilMs = this.time.now + PLAYER_CAUGHT_ANIMATION_MS
       if (this.controlMode === 'simulation') {
         this.pendingAdvance = this.time.delayedCall(PLAYER_CAUGHT_ANIMATION_MS + AUTO_ADVANCE_DELAY_MS, () => {
-          this.scene.restart({ levelSlot: this.levelSlot, controlMode: this.controlMode })
+          this.scene.restart({
+            levelSlot: this.levelSlot,
+            controlMode: this.controlMode,
+            runProgress: cloneRunProgressState(this.runProgress)
+          })
         })
       }
       return
@@ -401,7 +440,11 @@ export class GameScene extends Phaser.Scene {
       ? `Simulator cleared ${formatLevelLabel(this.levelSlot)}. Loading ${formatLevelLabel(nextSlot)}...`
       : `${formatLevelLabel(this.levelSlot)} clear. Loading ${formatLevelLabel(nextSlot)}...`
     this.pendingAdvance = this.time.delayedCall(AUTO_ADVANCE_DELAY_MS, () => {
-      this.scene.restart({ levelSlot: nextSlot, controlMode: this.controlMode })
+      this.scene.restart({
+        levelSlot: nextSlot,
+        controlMode: this.controlMode,
+        runProgress: cloneRunProgressState(this.runProgress)
+      })
     })
   }
 

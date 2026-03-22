@@ -105,6 +105,26 @@ This includes:
 
 The player wins as soon as all enemies are defeated.
 
+## Scoring and ranking
+
+The game now tracks both a visible arcade score and a stricter campaign ranking.
+
+- ranking priority is:
+  more maps cleared, then fewer deaths, then lower total run time, then higher
+  score
+- every NPC defeat adds points
+- NPC points include a stage-time bonus, so earlier kills in the stage are
+  worth more
+- every stage clear adds a much larger reward than an NPC kill
+- the stage-clear reward also includes a time bonus, so faster clears are worth
+  more
+- every death applies a heavy score penalty
+- total run time accumulates across retries, so failed attempts still cost time
+- the HUD shows score, cleared maps, deaths, total run time, and current stage
+  time in both `Play` and `Simulator`
+- every positive or negative score change animates on the HUD at the moment it
+  happens
+
 ## Campaign progression
 
 - The campaign always starts at **Map 01**.

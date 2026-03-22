@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { formatScoreValue, type ScoreDeltaEvent } from '../core/RunProgress'
 import { clamp, getHudMetrics } from '../utils/layout'
 
 interface UIState {
@@ -7,6 +8,8 @@ interface UIState {
   objective: string
   status: string
   help: string
+  score: number
+  runStats: string
   simulatorPolicyLabel?: string
 }
 
@@ -25,9 +28,12 @@ export class UIScene extends Phaser.Scene {
   private simulatorPolicyButtonText?: Phaser.GameObjects.Text
   private titleText?: Phaser.GameObjects.Text
   private objectiveText?: Phaser.GameObjects.Text
+  private scoreText?: Phaser.GameObjects.Text
   private enemiesText?: Phaser.GameObjects.Text
+  private runStatsText?: Phaser.GameObjects.Text
   private statusText?: Phaser.GameObjects.Text
   private helpText?: Phaser.GameObjects.Text
+  private activeScoreDeltaCount = 0
 
   constructor() {
     super('UIScene')
@@ -85,10 +91,21 @@ export class UIScene extends Phaser.Scene {
       color: '#cbd5e1'
     })
 
+    this.scoreText = this.add.text(0, 0, 'Score: 0', {
+      fontFamily: 'Arial',
+      color: '#86efac',
+      fontStyle: 'bold'
+    })
+
     this.enemiesText = this.add.text(0, 0, '', {
       fontFamily: 'Arial',
       color: '#facc15',
       fontStyle: 'bold'
+    })
+
+    this.runStatsText = this.add.text(0, 0, '', {
+      fontFamily: 'Arial',
+      color: '#bfdbfe'
     })
 
     this.statusText = this.add.text(0, 0, '', {
@@ -104,9 +121,11 @@ export class UIScene extends Phaser.Scene {
     this.layoutScene(this.scale.width, this.scale.height)
 
     this.game.events.on('ui:update', this.handleUpdate, this)
+    this.game.events.on('ui:score-delta', this.handleScoreDelta, this)
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.game.events.off('ui:update', this.handleUpdate, this)
+      this.game.events.off('ui:score-delta', this.handleScoreDelta, this)
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this)
     })
   }
@@ -114,7 +133,9 @@ export class UIScene extends Phaser.Scene {
   private handleUpdate(payload: UIState): void {
     this.titleText?.setText(payload.levelName)
     this.objectiveText?.setText(payload.objective)
+    this.scoreText?.setText(`Score: ${formatScoreValue(payload.score)}`)
     this.enemiesText?.setText(`Raiders Remaining: ${payload.enemiesRemaining}`)
+    this.runStatsText?.setText(payload.runStats)
     this.statusText?.setText(payload.status)
     this.helpText?.setText(payload.help)
     const showSimulatorPolicy = Boolean(payload.simulatorPolicyLabel)
@@ -123,6 +144,48 @@ export class UIScene extends Phaser.Scene {
       ?.setVisible(showSimulatorPolicy)
       .setText(payload.simulatorPolicyLabel ?? '')
     this.layoutScene(this.scale.width, this.scale.height)
+  }
+
+  private handleScoreDelta(payload: ScoreDeltaEvent): void {
+    if (!this.scoreText) {
+      return
+    }
+
+    const stackOffset = this.activeScoreDeltaCount * 18
+    this.activeScoreDeltaCount += 1
+    const deltaText = this.add.text(
+      this.scoreText.x,
+      this.scoreText.y - 18 - stackOffset,
+      `${payload.amount >= 0 ? '+' : ''}${formatScoreValue(payload.amount)} ${payload.label}`,
+      {
+        fontFamily: 'Arial',
+        color: payload.amount >= 0 ? '#86efac' : '#fca5a5',
+        fontStyle: 'bold'
+      }
+    )
+      .setOrigin(1, 0.5)
+      .setDepth(20)
+
+    this.tweens.add({
+      targets: this.scoreText,
+      scaleX: 1.06,
+      scaleY: 1.06,
+      duration: 110,
+      yoyo: true,
+      ease: 'Sine.Out'
+    })
+
+    this.tweens.add({
+      targets: deltaText,
+      y: deltaText.y - 22,
+      alpha: 0,
+      duration: 850,
+      ease: 'Cubic.Out',
+      onComplete: () => {
+        this.activeScoreDeltaCount = Math.max(0, this.activeScoreDeltaCount - 1)
+        deltaText.destroy()
+      }
+    })
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
@@ -145,7 +208,9 @@ export class UIScene extends Phaser.Scene {
 
     const titleSize = clamp(width * 0.024, 18, 24)
     const objectiveSize = clamp(width * 0.014, 12, 15)
+    const scoreSize = clamp(width * 0.019, 16, 22)
     const enemiesSize = clamp(width * 0.018, 16, 22)
+    const runStatsSize = clamp(width * 0.0115, 11, 14)
     const statusSize = clamp(width * 0.015, 14, 18)
     const helpSize = clamp(width * 0.0115, 11, 14)
     const menuButtonWidth = clamp(width * 0.1, 74, 108)
@@ -153,6 +218,7 @@ export class UIScene extends Phaser.Scene {
     const menuButtonHeight = clamp(height * 0.05, 30, 38)
     const showSimulatorPolicy = this.simulatorPolicyButton?.visible ?? false
     const simulatorButtonX = innerRight - menuButtonWidth - 10 - simulatorButtonWidth
+    const rightInfoWidth = Math.max(menuButtonWidth + (showSimulatorPolicy ? simulatorButtonWidth + 10 : 0), clamp(panelWidth * 0.26, 190, 290))
 
     this.menuButton
       ?.setPosition(innerRight - menuButtonWidth, topPanelTop + 12)
@@ -166,7 +232,7 @@ export class UIScene extends Phaser.Scene {
       ?.setPosition(innerLeft, topPanelTop + 12)
       .setOrigin(0, 0)
       .setFontSize(titleSize)
-      .setWordWrapWidth(panelWidth - menuButtonWidth - (showSimulatorPolicy ? simulatorButtonWidth + 62 : 52))
+      .setWordWrapWidth(Math.max(panelWidth - rightInfoWidth - 58, 180))
 
     this.simulatorPolicyButton
       ?.setPosition(simulatorButtonX, topPanelTop + 12)
@@ -177,7 +243,7 @@ export class UIScene extends Phaser.Scene {
       .setFontSize(clamp(width * 0.0115, 11, 13))
 
     this.enemiesText
-      ?.setPosition(innerRight, topPanelTop + 18 + menuButtonHeight)
+      ?.setPosition(innerRight, topPanelTop + 24 + menuButtonHeight + scoreSize)
       .setOrigin(1, 0)
       .setFontSize(enemiesSize)
 
@@ -185,7 +251,18 @@ export class UIScene extends Phaser.Scene {
       ?.setPosition(innerLeft, topPanelTop + 14 + titleSize)
       .setOrigin(0, 0)
       .setFontSize(objectiveSize)
-      .setWordWrapWidth(panelWidth - 32)
+      .setWordWrapWidth(Math.max(panelWidth - rightInfoWidth - 44, 180))
+
+    this.scoreText
+      ?.setPosition(innerRight, topPanelTop + 18 + menuButtonHeight)
+      .setOrigin(1, 0)
+      .setFontSize(scoreSize)
+
+    this.runStatsText
+      ?.setPosition(innerRight, topPanelTop + 30 + menuButtonHeight + scoreSize + enemiesSize)
+      .setOrigin(1, 0)
+      .setFontSize(runStatsSize)
+      .setWordWrapWidth(clamp(panelWidth * 0.28, 180, 280))
 
     if (hud.narrow) {
       const titleWrapWidth = Math.max(panelWidth - menuButtonWidth - 48, 120)
@@ -219,13 +296,24 @@ export class UIScene extends Phaser.Scene {
         ?.setPosition(innerLeft, topPanelTop + 18 + titleSize)
         .setOrigin(0, 0)
         .setFontSize(clamp(width * 0.028, 10, 13))
-        .setWordWrapWidth(panelWidth - 32)
+        .setWordWrapWidth(Math.max(panelWidth * 0.54, 120))
+
+      this.scoreText
+        ?.setPosition(innerRight, topPanelTop + 16 + menuButtonHeight)
+        .setOrigin(1, 0)
+        .setFontSize(clamp(width * 0.034, 12, 18))
 
       this.enemiesText
-        ?.setPosition(innerLeft, topPanelTop + hud.topPanelHeight - enemiesSize - 12)
-        .setOrigin(0, 0)
+        ?.setPosition(innerRight, topPanelTop + 22 + menuButtonHeight + scoreSize)
+        .setOrigin(1, 0)
         .setFontSize(clamp(width * 0.04, 13, 18))
         .setWordWrapWidth(panelWidth - 32)
+
+      this.runStatsText
+        ?.setPosition(innerRight, topPanelTop + hud.topPanelHeight - runStatsSize - 12)
+        .setOrigin(1, 0)
+        .setFontSize(clamp(width * 0.027, 10, 12))
+        .setWordWrapWidth(panelWidth * 0.48)
 
       this.statusText
         ?.setPosition(innerLeft, bottomPanelTop + 12)
@@ -252,7 +340,7 @@ export class UIScene extends Phaser.Scene {
         ?.setPosition(innerLeft, topPanelTop + 12)
         .setOrigin(0, 0)
         .setFontSize(titleSize)
-        .setWordWrapWidth(panelWidth - menuButtonWidth - (showSimulatorPolicy ? simulatorButtonWidth + 62 : 52))
+        .setWordWrapWidth(Math.max(panelWidth - rightInfoWidth - 58, 180))
 
       this.simulatorPolicyButton
         ?.setPosition(simulatorButtonX, topPanelTop + 12)
@@ -263,7 +351,7 @@ export class UIScene extends Phaser.Scene {
         .setFontSize(clamp(width * 0.0115, 11, 13))
 
       this.enemiesText
-        ?.setPosition(innerRight, topPanelTop + 18 + menuButtonHeight)
+        ?.setPosition(innerRight, topPanelTop + 24 + menuButtonHeight + scoreSize)
         .setOrigin(1, 0)
         .setFontSize(enemiesSize)
 
@@ -271,7 +359,18 @@ export class UIScene extends Phaser.Scene {
         ?.setPosition(innerLeft, topPanelTop + 14 + titleSize)
         .setOrigin(0, 0)
         .setFontSize(objectiveSize)
-        .setWordWrapWidth(panelWidth - 32)
+        .setWordWrapWidth(Math.max(panelWidth - rightInfoWidth - 44, 180))
+
+      this.scoreText
+        ?.setPosition(innerRight, topPanelTop + 18 + menuButtonHeight)
+        .setOrigin(1, 0)
+        .setFontSize(scoreSize)
+
+      this.runStatsText
+        ?.setPosition(innerRight, topPanelTop + 30 + menuButtonHeight + scoreSize + enemiesSize)
+        .setOrigin(1, 0)
+        .setFontSize(runStatsSize)
+        .setWordWrapWidth(clamp(panelWidth * 0.28, 180, 280))
 
       this.statusText
         ?.setPosition(innerLeft, bottomPanelTop + 14)
