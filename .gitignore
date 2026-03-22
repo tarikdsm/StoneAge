@@ -2,3 +2,4 @@ node_modules/
 dist/
 *.tsbuildinfo
 Backup_RAR/
+Backup_ZIP/

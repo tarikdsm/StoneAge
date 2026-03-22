@@ -227,12 +227,13 @@ npm run build
 npm run backup:llm
 ```
 
-- Creates a local `.rar` under `Backup_RAR/`
-- Uses a timestamped file name like `StoneAge_LLM_Backup_21032026_1234.rar`
+- Creates a local `.zip` under `Backup_ZIP/`
+- Uses a timestamped file name like `StoneAge_LLM_Backup_21032026_1234.zip`
 - Includes the analyzable project source, docs, configs, published map JSON, and
   text-based assets
 - Excludes build output, dependencies, git metadata, and the backup directory
-- `Backup_RAR/` is local-only and ignored by git
+- `Backup_ZIP/` is local-only and ignored by git
+- Uses PowerShell/.NET ZIP creation, so it no longer depends on WinRAR
 
 ## Production build
 

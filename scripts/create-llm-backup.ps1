@@ -6,25 +6,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-function Resolve-WinRarPath {
-  $candidates = @(@(
-    (Join-Path $env:ProgramFiles "WinRAR\WinRAR.exe"),
-    (Join-Path ${env:ProgramFiles(x86)} "WinRAR\WinRAR.exe")
-  ) | Where-Object { $_ -and (Test-Path $_) })
-
-  if ($candidates.Count -gt 0) {
-    return $candidates[0]
-  }
-
-  foreach ($commandName in @("WinRAR.exe", "Rar.exe")) {
-    $command = Get-Command $commandName -ErrorAction SilentlyContinue
-    if ($command) {
-      return $command.Source
-    }
-  }
-
-  throw "WinRAR was not found. Install WinRAR before generating `.rar` backups."
-}
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 function Get-ProjectRelativePath {
   param(
@@ -60,9 +42,9 @@ function Add-FilesFromPath {
 }
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$backupDir = Join-Path $projectRoot "Backup_RAR"
+$backupDir = Join-Path $projectRoot "Backup_ZIP"
 $timestamp = Get-Date -Format "ddMMyyyy_HHmm"
-$archiveName = "{0}_{1}.rar" -f $ArchiveBaseName, $timestamp
+$archiveName = "{0}_{1}.zip" -f $ArchiveBaseName, $timestamp
 $archivePath = Join-Path $backupDir $archiveName
 $stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("stoneage-llm-backup-" + [System.Guid]::NewGuid())
 
@@ -113,12 +95,11 @@ Add-FilesFromPath -RelativePath "scripts" -AllowedExtensions $allowedTextExtensi
 Add-FilesFromPath -RelativePath "src" -AllowedExtensions $allowedTextExtensions
 Add-FilesFromPath -RelativePath "public\maps" -AllowedExtensions @(".json")
 Add-FilesFromPath -RelativePath "public\assets" -AllowedExtensions @(".svg", ".json", ".md", ".txt")
+Add-FilesFromPath -RelativePath "public\models" -AllowedExtensions @(".json", ".md", ".txt")
 
 if ($includedFiles.Count -eq 0) {
   throw "No analyzable project files were collected for the backup."
 }
-
-$winRarPath = Resolve-WinRarPath
 
 New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
 New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
@@ -147,7 +128,7 @@ try {
     "- Source root: $projectRoot",
     "- Archive name: $archiveName",
     "- Included file count: $($relativePaths.Count)",
-    "- Excluded directories: .git, node_modules, dist, Backup_RAR",
+    "- Excluded directories: .git, node_modules, dist, Backup_RAR, Backup_ZIP",
     "- Excluded outputs: compiled bundles, archives, binaries, temporary files",
     "",
     "This backup is intended to help LLMs inspect the current project state",
@@ -157,15 +138,16 @@ try {
   Set-Content -Path $manifestPath -Value $manifestLines -Encoding UTF8
   Set-Content -Path $fileListPath -Value $relativePaths -Encoding UTF8
 
-  $sourceItems = @(Get-ChildItem -Path $stagingRoot -Force | ForEach-Object { $_.FullName })
-  if ($sourceItems.Count -eq 0) {
-    throw "The backup staging directory is empty."
+  if (Test-Path $archivePath) {
+    Remove-Item -Path $archivePath -Force
   }
 
-  & $winRarPath a -r -ep1 $archivePath @sourceItems | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    throw "WinRAR failed with exit code $LASTEXITCODE."
-  }
+  [System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $stagingRoot,
+    $archivePath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $false
+  )
 
   Write-Output "Created LLM backup: $archivePath"
 }
