@@ -96,8 +96,12 @@ Simulator-facing control policies live here.
 
 - `SimulationController.ts` is the runtime wrapper used by `GameScene` when no
   human input is involved
+- it caches player-policy output from one frame to the next until a
+  decision-relevant tactical signature changes, so the browser simulator does
+  not rerun expensive lookahead work every frame
 - `RuleBasedPlayerPolicy.ts` is the current pure player-bot policy, using
-  short-horizon lookahead, tactical scoring, and controlled randomness
+  short-horizon lookahead, tactical scoring, controlled randomness, and a
+  hot-path-specific manual `StageState` clone to keep the simulator responsive
 - `ModelPlayerPolicy.ts` loads a future browser-friendly player model artifact
   from `public/models/player-policy.json`
 - this policy boundary is the intended insertion point for future trained

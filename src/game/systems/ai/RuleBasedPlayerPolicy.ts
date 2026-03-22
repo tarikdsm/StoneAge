@@ -123,9 +123,17 @@ export class RuleBasedPlayerPolicy implements PlayerSimulationPolicy {
       return {}
     }
 
+    if (state.player.motion || state.player.pushCooldownMs > 0) {
+      return this.chooseRolloutInput(level, state)
+    }
+
     const candidates = buildCandidateInputs(level, state)
     if (candidates.length === 0) {
       return {}
+    }
+
+    if (candidates.length === 1) {
+      return candidates[0]?.input ?? {}
     }
 
     const ranked = candidates
@@ -461,11 +469,70 @@ function createSearchStats(state: StageState): SearchStats {
 }
 
 function cloneStageState(state: StageState): StageState {
-  if (typeof structuredClone === 'function') {
-    return structuredClone(state)
+  return {
+    player: clonePlayerState(state.player),
+    blocks: state.blocks.map(cloneBlockState),
+    enemies: state.enemies.map(cloneEnemyState),
+    elapsedMs: state.elapsedMs,
+    status: state.status,
+    message: state.message,
+    rngSeed: state.rngSeed,
+    blockRespawnTimerMs: state.blockRespawnTimerMs,
+    nextRespawnedBlockIndex: state.nextRespawnedBlockIndex
   }
+}
 
-  return JSON.parse(JSON.stringify(state)) as StageState
+function clonePlayerState(player: StageState['player']): StageState['player'] {
+  return {
+    gridPosition: { ...player.gridPosition },
+    worldPosition: { ...player.worldPosition },
+    facing: player.facing,
+    pushCooldownMs: player.pushCooldownMs,
+    motion: player.motion ? cloneMotionState(player.motion) : undefined
+  }
+}
+
+function cloneBlockState(block: BlockState): BlockState {
+  return {
+    id: block.id,
+    source: block.source,
+    fadeInMs: block.fadeInMs,
+    gridPosition: { ...block.gridPosition },
+    worldPosition: { ...block.worldPosition },
+    motion: block.motion ? cloneMotionState(block.motion) : undefined,
+    slideDirection: block.slideDirection
+  }
+}
+
+function cloneEnemyState(enemy: EnemyState): EnemyState {
+  return {
+    id: enemy.id,
+    type: enemy.type,
+    alive: enemy.alive,
+    phase: enemy.phase,
+    phaseTimerMs: enemy.phaseTimerMs,
+    enraged: enemy.enraged,
+    pushedByBlockId: enemy.pushedByBlockId,
+    digTarget: enemy.digTarget
+      ? {
+        blockId: enemy.digTarget.blockId,
+        direction: enemy.digTarget.direction
+      }
+      : undefined,
+    lastDirection: enemy.lastDirection,
+    gridPosition: { ...enemy.gridPosition },
+    worldPosition: { ...enemy.worldPosition },
+    motion: enemy.motion ? cloneMotionState(enemy.motion) : undefined
+  }
+}
+
+function cloneMotionState(motion: MotionState): MotionState {
+  return {
+    from: { ...motion.from },
+    to: { ...motion.to },
+    direction: motion.direction,
+    progress: motion.progress
+  }
 }
 
 function canAttemptDirection(level: LevelData, state: StageState, direction: Direction): boolean {

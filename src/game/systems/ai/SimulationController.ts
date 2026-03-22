@@ -105,15 +105,17 @@ export class SimulationController {
   }
 }
 
+const PLAYER_COOLDOWN_BUCKET_MS = 60
+const ENEMY_PHASE_TIMER_BUCKET_MS = 180
+
 function buildDecisionSignature(mode: SimulatorPlayerPolicyMode, state: StageState): string {
   return JSON.stringify({
     mode,
     status: state.status,
-    elapsedBucket: Math.floor(state.elapsedMs / 120),
     player: {
       x: state.player.gridPosition.x,
       y: state.player.gridPosition.y,
-      cooldown: Math.floor(state.player.pushCooldownMs / 60),
+      cooldown: Math.floor(state.player.pushCooldownMs / PLAYER_COOLDOWN_BUCKET_MS),
       motionTo: state.player.motion?.to ?? null,
       motionDirection: state.player.motion?.direction ?? null
     },
@@ -128,6 +130,9 @@ function buildDecisionSignature(mode: SimulatorPlayerPolicyMode, state: StageSta
       id: enemy.id,
       alive: enemy.alive,
       phase: enemy.phase,
+      phaseTimerBucket: enemy.phase === 'active'
+        ? 0
+        : Math.floor(enemy.phaseTimerMs / ENEMY_PHASE_TIMER_BUCKET_MS),
       x: enemy.gridPosition.x,
       y: enemy.gridPosition.y,
       motionTo: enemy.motion?.to ?? null

@@ -63,6 +63,7 @@ The project combines:
 - Drives the player through the pure simulation using a stronger heuristic policy by default
 - Exposes a HUD toggle that switches the player bot between `Heuristico` and `IA`
 - Loads the future `IA` policy from `public/models/player-policy.json` when that model artifact is available
+- Reuses cached heuristic decisions until the tactical board state changes, which keeps simulator performance stable on the browser build
 - Keeps NPC behavior inside the authoritative `StageState` core
 - Auto-retries on defeat and auto-advances on stage clear
 - Reuses the same board rendering, HUD, progression, and level repository flow

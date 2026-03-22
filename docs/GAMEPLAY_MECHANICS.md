@@ -146,6 +146,8 @@ repository and editor if some slots are intentionally cleared later.
   default
 - that heuristic policy uses short-horizon planning plus controlled randomness
   so repeated runs can explore different survivable lines
+- the simulator caches heuristic decisions while the tactical state is stable,
+  so browser performance stays smooth even when several NPCs are active
 - the HUD can toggle the player bot between `Heuristico` and `IA`
 - `IA` mode loads a future browser-friendly model artifact from
   `public/models/player-policy.json`, and falls back cleanly if the file does
