@@ -200,6 +200,9 @@ src/game
   tests/
   types/
   utils/
+trainer/
+  README.md
+  smoke_test.py
 ```
 
 ## Local development
@@ -220,6 +223,18 @@ npm test
 npm run lint
 npm run build
 ```
+
+## RL trainer workspace
+
+- `trainer/` is reserved for reinforcement-learning experiments and model
+  tooling
+- it is intentionally separate from the Phaser/Vite frontend
+- `trainer/.venv/` is local-only and ignored by git through
+  `trainer/.gitignore`
+- `trainer/smoke_test.py` validates that the Python training environment can
+  import `torch` and see CUDA
+- WSL2 + Ubuntu remains the preferred long-term trainer host, but the repo also
+  supports a Windows fallback workspace when WSL is not enabled yet
 
 ## LLM backup
 
