@@ -39,7 +39,8 @@ This avoids reimplementing gameplay rules in Python.
   observation layout for `MlpPolicy`
 - `trainer/train_ppo.py`
   PPO smoke test and training entrypoint for one map or a simple rotation,
-  including periodic evaluation, checkpoint metrics, and curve plots
+  including periodic evaluation, checkpoint metrics, curve plots, and optional
+  actor warm start from a behavior-cloning model
 - `trainer/evaluate_policy.py`
   Formal multi-episode evaluation for `random`, `heuristic`, `bc`, and `ppo`
   agents, including JSON reports under `trainer/eval_reports/`
@@ -241,9 +242,25 @@ Evaluation reports now also include:
 - no-op ratio
 - space-action ratio
 - empirical action entropy
+- average policy entropy
+- average action confidence
+- KL to uniform action usage / policy usage
 
 These metrics are used to detect policy collapse, degenerate action loops, and
 loss of launch usage.
+
+## Checkpoint selection
+
+Best checkpoints are now selected by gameplay-first priority:
+
+1. higher `completion_rate`
+2. lower `death_rate`
+3. higher `average_kills`
+4. higher `average_raw_score`
+5. higher `average_reward`
+
+This intentionally prevents a reward-only checkpoint from being preferred over
+one that actually clears the phase more often.
 
 ## Determinism
 
@@ -288,6 +305,12 @@ The headless simulator is deterministic relative to:
 - `300k`
 
 The current default is `map01` + `single` + `50k`.
+
+For `map01` fine-tuning, `train_ppo.py` can initialize the PPO actor from
+`trainer/models/bc_map01_heuristic.pt` as long as the policy MLP hidden sizes
+match the behavior-cloning network. The PPO training entrypoint now also forces
+`ReLU` in the actor/value MLP so the warm-started actor stays compatible with
+the BC network activations.
 
 Each run produces:
 
@@ -339,4 +362,10 @@ Train behavior cloning:
 
 ```bash
 trainer/.venv/Scripts/python.exe trainer/train_behavior_cloning.py --dataset-path trainer/datasets/heuristic_map01_bc.npz --output-name bc_map01_heuristic --device cpu --epochs 20
+```
+
+Warm-start PPO from BC:
+
+```bash
+trainer/.venv/Scripts/python.exe trainer/train_ppo.py --map-id map01 --curriculum single --preset debug --device cpu --bc-warm-start-path trainer/models/bc_map01_heuristic.pt --model-name ppo_stoneage_map01_bc_warm_debug
 ```

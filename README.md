@@ -247,7 +247,8 @@ npm run build
   and explicit affordance/threat features for the early `map01` learning phase
 - `trainer/train_ppo.py` provides the PPO baseline, smoke-test path, and a
   first curriculum step over `map01`-`map03`, while defaulting this learning
-  phase to focused `map01` experiments with periodic checkpoint evaluation
+  phase to focused `map01` experiments with periodic checkpoint evaluation and
+  optional warm start from the behavior-cloning baseline
 - `trainer/evaluate_policy.py` measures completion rate, death rate, kills,
   reward, raw score, step counts, and action distributions for `random`,
   `heuristic`, `bc`, or `ppo` agents

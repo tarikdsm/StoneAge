@@ -10,6 +10,7 @@ from typing import Any, DefaultDict, Dict, Iterable, Optional, Sequence
 
 import matplotlib
 import numpy as np
+import torch
 from stable_baselines3 import PPO
 
 from bc_model import BehaviorCloningPolicy
@@ -124,8 +125,8 @@ def compare_eval_summaries(left: Dict[str, Any], right: Dict[str, Any]) -> int:
         float(left["completion_rate"]),
         -float(left["death_rate"]),
         float(left["average_kills"]),
-        float(left["average_reward"]),
         float(left["average_raw_score"]),
+        float(left["average_reward"]),
         -float(left["average_decision_steps"]),
         -float(left["average_sim_steps"]),
     )
@@ -133,8 +134,8 @@ def compare_eval_summaries(left: Dict[str, Any], right: Dict[str, Any]) -> int:
         float(right["completion_rate"]),
         -float(right["death_rate"]),
         float(right["average_kills"]),
-        float(right["average_reward"]),
         float(right["average_raw_score"]),
+        float(right["average_reward"]),
         -float(right["average_decision_steps"]),
         -float(right["average_sim_steps"]),
     )
@@ -162,6 +163,10 @@ def evaluate_agent(
     all_episodes: list[Dict[str, Any]] = []
     action_counts = [0 for _ in range(10)]
     per_map_action_counts: DefaultDict[str, list[int]] = defaultdict(lambda: [0 for _ in range(10)])
+    policy_probability_sum = np.zeros(10, dtype=np.float64)
+    policy_entropy_sum_bits = 0.0
+    policy_confidence_sum = 0.0
+    policy_step_count = 0
 
     try:
         for episode_index in range(episodes):
@@ -172,6 +177,11 @@ def evaluate_agent(
 
             while True:
                 action = select_action(agent, observation, env, loaded_model, deterministic)
+                probabilities = get_action_probabilities(agent, observation, action, loaded_model)
+                policy_probability_sum += probabilities
+                policy_entropy_sum_bits += entropy_bits(probabilities)
+                policy_confidence_sum += float(np.max(probabilities))
+                policy_step_count += 1
                 action_counts[action] += 1
                 per_map_action_counts[episode_map_id][action] += 1
                 episode_actions[action] += 1
@@ -205,6 +215,16 @@ def evaluate_agent(
         map_id: summarize_action_distribution(counts)
         for map_id, counts in per_map_action_counts.items()
     }
+    policy_mean_probabilities = (
+        (policy_probability_sum / policy_step_count).astype(np.float64)
+        if policy_step_count > 0
+        else np.full(10, 0.1, dtype=np.float64)
+    )
+    policy_diagnostics = summarize_policy_diagnostics(
+        policy_mean_probabilities,
+        policy_entropy_sum_bits / policy_step_count if policy_step_count > 0 else math.log2(10),
+        policy_confidence_sum / policy_step_count if policy_step_count > 0 else 0.1,
+    )
 
     return {
         "agent": agent,
@@ -214,6 +234,7 @@ def evaluate_agent(
         "summary": summary,
         "per_map": per_map,
         "action_distribution": action_distribution,
+        "policy_diagnostics": policy_diagnostics,
         "per_map_action_distribution": per_map_action_distribution,
         "episodes": all_episodes,
     }
@@ -222,6 +243,7 @@ def evaluate_agent(
 def print_report(report: Dict[str, Any], prefix: str = "eval") -> None:
     summary = report["summary"]
     action_distribution = report["action_distribution"]
+    policy_diagnostics = report["policy_diagnostics"]
     print(
         "[%s:%s] completion_rate=%.3f death_rate=%.3f avg_kills=%.2f avg_reward=%.2f avg_raw_score=%.2f avg_decision_steps=%.2f avg_sim_steps=%.2f"
         % (
@@ -245,6 +267,17 @@ def print_report(report: Dict[str, Any], prefix: str = "eval") -> None:
             action_distribution["space_action_ratio"],
             action_distribution["empirical_entropy_bits"],
             action_distribution["counts"],
+        )
+    )
+    print(
+        "[%s:%s:policy] avg_entropy=%.3f avg_confidence=%.3f kl_to_uniform=%.3f mean_probs=%s"
+        % (
+            prefix,
+            report["agent"],
+            policy_diagnostics["average_policy_entropy_bits"],
+            policy_diagnostics["average_action_confidence"],
+            policy_diagnostics["policy_kl_to_uniform_bits"],
+            [round(value, 3) for value in policy_diagnostics["mean_action_probabilities"]],
         )
     )
 
@@ -272,7 +305,7 @@ def write_json(path: Path, payload: Dict[str, Any]) -> Path:
 def write_csv(path: Path, fieldnames: Sequence[str], rows: Iterable[Dict[str, Any]]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
@@ -334,6 +367,13 @@ def summarize_action_distribution(action_counts: Sequence[int]) -> Dict[str, Any
 
     frequencies = [float(count) / total for count in action_counts]
     entropy_bits = -sum(prob * math.log2(prob) for prob in frequencies if prob > 0)
+    dominant_action = int(max(range(len(action_counts)), key=lambda index: action_counts[index]))
+    uniform_probability = 1.0 / len(action_counts)
+    kl_to_uniform_bits = sum(
+        prob * math.log2(prob / uniform_probability)
+        for prob in frequencies
+        if prob > 0
+    )
 
     return {
         "counts": [int(value) for value in action_counts],
@@ -341,4 +381,66 @@ def summarize_action_distribution(action_counts: Sequence[int]) -> Dict[str, Any
         "no_op_ratio": frequencies[0],
         "space_action_ratio": float(sum(frequencies[5:10])),
         "empirical_entropy_bits": entropy_bits,
+        "dominant_action": dominant_action,
+        "dominant_action_ratio": frequencies[dominant_action],
+        "kl_to_uniform_bits": kl_to_uniform_bits,
+    }
+
+
+def get_action_probabilities(
+    agent: str,
+    observation: np.ndarray,
+    action: int,
+    model: Optional[Any],
+) -> np.ndarray:
+    if agent == "random":
+        return np.full(10, 0.1, dtype=np.float64)
+
+    if agent == "heuristic":
+        probabilities = np.zeros(10, dtype=np.float64)
+        probabilities[action] = 1.0
+        return probabilities
+
+    if agent == "bc":
+        if model is None:
+            raise ValueError("BC agent requested without a loaded model.")
+        return model.predict_probabilities(observation).astype(np.float64, copy=False)
+
+    if agent == "ppo":
+        if model is None:
+            raise ValueError("PPO agent requested without a loaded model.")
+        with torch.no_grad():
+            observation_tensor, _ = model.policy.obs_to_tensor(observation)
+            distribution = model.policy.get_distribution(observation_tensor)
+            probabilities = distribution.distribution.probs.squeeze(0).detach().cpu().numpy()
+        return probabilities.astype(np.float64, copy=False)
+
+    raise ValueError(f"Unsupported agent {agent}.")
+
+
+def entropy_bits(probabilities: np.ndarray) -> float:
+    clipped = np.clip(probabilities.astype(np.float64, copy=False), 1e-12, 1.0)
+    return float(-np.sum(clipped * np.log2(clipped)))
+
+
+def summarize_policy_diagnostics(
+    mean_probabilities: np.ndarray,
+    average_policy_entropy_bits: float,
+    average_action_confidence: float,
+) -> Dict[str, Any]:
+    probabilities = mean_probabilities.astype(np.float64, copy=False)
+    uniform_probability = 1.0 / probabilities.shape[0]
+    kl_to_uniform_bits = float(
+        sum(
+            prob * math.log2(prob / uniform_probability)
+            for prob in probabilities
+            if prob > 0
+        )
+    )
+
+    return {
+        "average_policy_entropy_bits": float(average_policy_entropy_bits),
+        "average_action_confidence": float(average_action_confidence),
+        "mean_action_probabilities": probabilities.tolist(),
+        "policy_kl_to_uniform_bits": kl_to_uniform_bits,
     }

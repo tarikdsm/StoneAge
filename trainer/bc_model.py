@@ -39,15 +39,27 @@ class BehaviorCloningPolicy:
         self.model.eval()
 
     def predict(self, observation: np.ndarray) -> int:
+        probabilities = self.predict_probabilities(observation)
+        return int(np.argmax(probabilities))
+
+    def predict_probabilities(self, observation: np.ndarray) -> np.ndarray:
         with torch.no_grad():
             tensor = torch.as_tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0)
             logits = self.model(tensor)
-            return int(torch.argmax(logits, dim=1).item())
+            probabilities = torch.softmax(logits, dim=1).squeeze(0).cpu().numpy()
+            return probabilities.astype(np.float32, copy=False)
 
     @classmethod
     def load(cls, path: str | Path, device: str = "cpu") -> "BehaviorCloningPolicy":
-        payload = torch.load(Path(path), map_location=device)
+        payload = load_behavior_cloning_payload(path, map_location=device)
         return cls(payload, device=device)
+
+    def linear_layers(self) -> list[nn.Linear]:
+        return [module for module in self.model.network if isinstance(module, nn.Linear)]
+
+
+def load_behavior_cloning_payload(path: str | Path, map_location: str | torch.device = "cpu") -> Dict[str, Any]:
+    return torch.load(Path(path), map_location=map_location)
 
 
 def save_behavior_cloning_model(

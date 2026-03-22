@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
+import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 
+from bc_model import BehaviorCloningPolicy
 from eval_utils import (
     build_eval_reports_dir,
     compare_eval_summaries,
@@ -45,13 +47,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-decision-steps", type=int, default=600)
     parser.add_argument("--smoke-steps", type=int, default=8)
     parser.add_argument("--model-name", default="")
+    parser.add_argument("--bc-warm-start-path", default="")
+    parser.add_argument("--policy-hidden-dims", default="256,128")
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--n-steps", type=int, default=1024)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--clip-range", type=float, default=0.2)
-    parser.add_argument("--ent-coef", type=float, default=0.01)
+    parser.add_argument("--ent-coef", type=float, default=0.03)
     parser.add_argument("--skip-random-baseline", action=argparse.BooleanOptionalAction, default=False)
     return parser.parse_args()
 
@@ -70,6 +74,13 @@ def build_model_name(map_ids: Sequence[str], curriculum: str, explicit_name: str
 
     joined_maps = "_".join(map_ids)
     return f"ppo_stoneage_{curriculum}_{joined_maps}_{preset}"
+
+
+def parse_hidden_dims(raw_hidden_dims: str) -> tuple[int, ...]:
+    parsed = tuple(int(value.strip()) for value in raw_hidden_dims.split(",") if value.strip())
+    if not parsed:
+        raise ValueError("At least one policy hidden dimension is required.")
+    return parsed
 
 
 def run_smoke_test(env: StoneAgeEnv, smoke_steps: int, map_ids: Sequence[str]) -> None:
@@ -144,6 +155,9 @@ class PeriodicEvaluationCallback(BaseCallback):
         self.metrics_csv_path = reports_dir / f"{run_name}_metrics.csv"
         self.plot_path = reports_dir / f"{run_name}_curve.png"
         self.best_model_base = model_output_path(models_dir, f"{run_name}_best")
+        self.best_selection_criterion = (
+            "completion_rate > lower death_rate > average_kills > average_raw_score > average_reward"
+        )
 
     def _on_training_start(self) -> None:
         self._evaluate_and_record(0)
@@ -191,6 +205,17 @@ class PeriodicEvaluationCallback(BaseCallback):
             "average_raw_score": float(summary["average_raw_score"]),
             "average_decision_steps": float(summary["average_decision_steps"]),
             "average_sim_steps": float(summary["average_sim_steps"]),
+            "empirical_action_entropy_bits": float(report["action_distribution"]["empirical_entropy_bits"]),
+            "no_op_ratio": float(report["action_distribution"]["no_op_ratio"]),
+            "space_action_ratio": float(report["action_distribution"]["space_action_ratio"]),
+            "dominant_action": int(report["action_distribution"]["dominant_action"]),
+            "dominant_action_ratio": float(report["action_distribution"]["dominant_action_ratio"]),
+            "action_kl_to_uniform_bits": float(report["action_distribution"]["kl_to_uniform_bits"]),
+            "average_policy_entropy_bits": float(report["policy_diagnostics"]["average_policy_entropy_bits"]),
+            "average_action_confidence": float(report["policy_diagnostics"]["average_action_confidence"]),
+            "policy_kl_to_uniform_bits": float(report["policy_diagnostics"]["policy_kl_to_uniform_bits"]),
+            "action_distribution": report["action_distribution"],
+            "policy_diagnostics": report["policy_diagnostics"],
             "checkpoint_path": checkpoint_path,
             "is_best": is_best,
         }
@@ -219,6 +244,7 @@ class PeriodicEvaluationCallback(BaseCallback):
                 "records": self.records,
                 "best_checkpoint_path": self.best_checkpoint_path,
                 "best_summary": self.best_summary,
+                "best_selection_criterion": self.best_selection_criterion,
             },
         )
         write_csv(
@@ -232,6 +258,15 @@ class PeriodicEvaluationCallback(BaseCallback):
                 "average_raw_score",
                 "average_decision_steps",
                 "average_sim_steps",
+                "empirical_action_entropy_bits",
+                "no_op_ratio",
+                "space_action_ratio",
+                "dominant_action",
+                "dominant_action_ratio",
+                "action_kl_to_uniform_bits",
+                "average_policy_entropy_bits",
+                "average_action_confidence",
+                "policy_kl_to_uniform_bits",
                 "checkpoint_path",
                 "is_best",
             ],
@@ -240,10 +275,49 @@ class PeriodicEvaluationCallback(BaseCallback):
         save_training_curve(self.records, self.plot_path)
 
 
+def apply_behavior_cloning_warm_start(model: PPO, bc_model_path: str, device: str) -> Dict[str, Any]:
+    bc_policy = BehaviorCloningPolicy.load(bc_model_path, device=device)
+    ppo_policy_layers = [
+        module
+        for module in model.policy.mlp_extractor.policy_net
+        if isinstance(module, torch.nn.Linear)
+    ] + [model.policy.action_net]
+    bc_layers = bc_policy.linear_layers()
+
+    if len(ppo_policy_layers) != len(bc_layers):
+        raise ValueError(
+            f"Incompatible BC warm start: expected {len(ppo_policy_layers)} linear layers, got {len(bc_layers)}."
+        )
+
+    for layer_index, (ppo_layer, bc_layer) in enumerate(zip(ppo_policy_layers, bc_layers)):
+        if tuple(ppo_layer.weight.shape) != tuple(bc_layer.weight.shape):
+            raise ValueError(
+                f"Incompatible BC warm start at layer {layer_index}: PPO {tuple(ppo_layer.weight.shape)} vs BC {tuple(bc_layer.weight.shape)}."
+            )
+        if tuple(ppo_layer.bias.shape) != tuple(bc_layer.bias.shape):
+            raise ValueError(
+                f"Incompatible BC warm start at layer {layer_index}: PPO {tuple(ppo_layer.bias.shape)} vs BC {tuple(bc_layer.bias.shape)}."
+            )
+
+    with torch.no_grad():
+        for ppo_layer, bc_layer in zip(ppo_policy_layers, bc_layers):
+            ppo_layer.weight.copy_(bc_layer.weight.to(device=ppo_layer.weight.device, dtype=ppo_layer.weight.dtype))
+            ppo_layer.bias.copy_(bc_layer.bias.to(device=ppo_layer.bias.device, dtype=ppo_layer.bias.dtype))
+
+    return {
+        "bc_model_path": bc_model_path,
+        "input_dim": bc_policy.input_dim,
+        "hidden_dims": list(bc_policy.hidden_dims),
+        "output_dim": bc_policy.output_dim,
+        "copied_layers": len(bc_layers),
+    }
+
+
 def main() -> None:
     args = parse_args()
     map_ids = resolve_map_ids(args.map_id, args.map_ids, args.curriculum)
     timesteps, eval_freq, eval_episodes = resolve_training_counts(args)
+    policy_hidden_dims = parse_hidden_dims(args.policy_hidden_dims)
 
     trainer_root = Path(__file__).resolve().parent
     models_dir = trainer_root / "models"
@@ -298,7 +372,18 @@ def main() -> None:
             tensorboard_log=str(logs_dir),
             seed=args.seed,
             device=args.device,
+            policy_kwargs={
+                "activation_fn": torch.nn.ReLU,
+                "net_arch": {"pi": list(policy_hidden_dims), "vf": list(policy_hidden_dims)},
+            },
         )
+        warm_start_info = None
+        if args.bc_warm_start_path.strip():
+            warm_start_info = apply_behavior_cloning_warm_start(model, args.bc_warm_start_path.strip(), args.device)
+            print(
+                "[train] applied BC warm start from %s with hidden_dims=%s"
+                % (args.bc_warm_start_path.strip(), warm_start_info["hidden_dims"])
+            )
 
         run_name = build_model_name(map_ids, args.curriculum, args.model_name, args.preset)
         checkpoint_callback = CheckpointCallback(
@@ -359,7 +444,11 @@ def main() -> None:
                     "clip_range": args.clip_range,
                     "ent_coef": args.ent_coef,
                     "device": args.device,
+                    "policy_hidden_dims": list(policy_hidden_dims),
+                    "activation_fn": "ReLU",
                 },
+                "best_checkpoint_selection": eval_callback.best_selection_criterion,
+                "bc_warm_start": warm_start_info,
                 "random_baseline": random_report,
                 "best_checkpoint_path": eval_callback.best_checkpoint_path,
                 "best_checkpoint_report": eval_callback.best_report,

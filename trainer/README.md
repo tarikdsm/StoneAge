@@ -32,7 +32,8 @@ Current files:
   light diagnostic reward shaping for novelty / loop detection
 - `train_ppo.py`
   PPO entrypoint focused on `map01` by default, with presets for `50k`, `100k`,
-  and `300k`, periodic checkpoint evaluation, JSON/CSV reports, and curve plots
+  and `300k`, periodic checkpoint evaluation, JSON/CSV reports, curve plots,
+  and optional warm start from a behavior-cloning checkpoint
 - `evaluate_policy.py`
   Multi-episode evaluation for `random`, `heuristic`, behavior-cloned (`bc`),
   or `ppo` agents, including action-distribution summaries and JSON reports
@@ -50,6 +51,19 @@ Current files:
   Supervised baseline trainer that learns to imitate the heuristic teacher
 - `bc_model.py`
   Lightweight PyTorch MLP used to save/load the behavior-cloning baseline
+
+Best-checkpoint priority:
+
+1. completion rate
+2. lower death rate
+3. average kills
+4. average raw score
+5. average reward
+
+Warm-start note:
+
+- `train_ppo.py` aligns the PPO MLP with the BC network by using `ReLU` and the
+  same hidden sizes before copying the actor weights
 
 Planned next training files:
 
